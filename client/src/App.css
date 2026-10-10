@@ -1,0 +1,33 @@
+
+/* Remove the default Vite/React centered-page restriction */
+
+html,
+body,
+#root {
+  width: 100%;
+  min-width: 320px;
+  min-height: 100%;
+  margin: 0;
+}
+
+html {
+  box-sizing: border-box;
+}
+
+body {
+  min-height: 100vh;
+  padding: 0;
+}
+
+#root {
+  max-width: none !important;
+  width: 100% !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}

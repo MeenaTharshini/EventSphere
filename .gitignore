@@ -1,0 +1,31 @@
+
+# Dependencies
+node_modules/
+client/node_modules/
+server/node_modules/
+
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+client/.env
+server/.env
+
+# Build output
+client/dist/
+dist/
+build/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+*.log
+
+# Local database files
+server/eventsphere.db
+server/eventsphere.db-journal
+
+# Editor and operating system files
+.vscode/
+.DS_Store
+Thumbs.db
