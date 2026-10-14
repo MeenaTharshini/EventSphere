@@ -19,6 +19,7 @@ async function initializeDatabase() {
 
   db.run("PRAGMA foreign_keys = ON");
 
+  // Existing users table
   db.run(`
     CREATE TABLE IF NOT EXISTS users (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -31,6 +32,7 @@ async function initializeDatabase() {
     )
   `);
 
+  // Existing events table
   db.run(`
     CREATE TABLE IF NOT EXISTS events (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -43,6 +45,24 @@ async function initializeDatabase() {
       organizer_id INTEGER,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (organizer_id) REFERENCES users(id)
+    )
+  `);
+
+  // New venues table
+  db.run(`
+    CREATE TABLE IF NOT EXISTS venues (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL UNIQUE,
+      address TEXT NOT NULL DEFAULT '',
+      city TEXT NOT NULL DEFAULT '',
+      state TEXT NOT NULL DEFAULT '',
+      country TEXT NOT NULL DEFAULT '',
+      postal_code TEXT NOT NULL DEFAULT '',
+      capacity INTEGER NOT NULL DEFAULT 0
+        CHECK (capacity >= 0),
+      cost_per_day REAL NOT NULL DEFAULT 0
+        CHECK (cost_per_day >= 0),
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
     )
   `);
 

@@ -104,3 +104,45 @@ export function logoutUser() {
   localStorage.removeItem("token");
   localStorage.removeItem("user");
 }
+
+export const getVenues = () => apiRequest("/venues");
+
+export const createVenue = (venue) =>
+  apiRequest("/venues", {
+    method: "POST",
+    body: JSON.stringify(venue),
+  });
+
+export const updateVenue = (id, venue) =>
+  apiRequest(`/venues/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(venue),
+  });
+
+export const deleteVenue = (id) =>
+  apiRequest(`/venues/${id}`, {
+    method: "DELETE",
+  });
+export async function getResources() {
+  return apiRequest("/api/resources");
+}
+
+export async function createResource(data) {
+  return apiRequest("/api/resources", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function updateResource(id, data) {
+  return apiRequest(`/api/resources/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteResource(id) {
+  return apiRequest(`/api/resources/${id}`, {
+    method: "DELETE",
+  });
+}
