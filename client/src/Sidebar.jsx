@@ -6,7 +6,8 @@ const navigationItems = [
   { label: "Dashboard", icon: "◈", href: "#overview" },
   { label: "Events", icon: "▦", href: "#events" },
   { label: "Venues", icon: "⌖", href: "#venues" },
-  { label: "Resources", icon: "◇", href: "#resources"},
+  { label: "Resources", icon: "◇", href: "#resources" },
+  { label: "Scheduling", icon: "◷", href: "#scheduling" },
   { label: "Attendees", icon: "♙", href: "#attendees", soon: true },
   { label: "Vendors", icon: "♧", href: "#vendors", soon: true },
   { label: "Reports", icon: "▥", href: "#reports", soon: true },
@@ -44,11 +45,16 @@ export default function Sidebar({
     if (!mobileOpen) return;
 
     const handleEscape = (event) => {
-      if (event.key === "Escape") setMobileOpen(false);
+      if (event.key === "Escape") {
+        setMobileOpen(false);
+      }
     };
 
     window.addEventListener("keydown", handleEscape);
-    return () => window.removeEventListener("keydown", handleEscape);
+
+    return () => {
+      window.removeEventListener("keydown", handleEscape);
+    };
   }, [mobileOpen]);
 
   function toggleSidebar() {
@@ -60,7 +66,9 @@ export default function Sidebar({
   }
 
   function closeMobileSidebar() {
-    if (isMobile) setMobileOpen(false);
+    if (isMobile) {
+      setMobileOpen(false);
+    }
   }
 
   function handleNavigation(event, item) {
@@ -69,10 +77,6 @@ export default function Sidebar({
     if (item.soon) return;
 
     closeMobileSidebar();
-
-    if (item.label === "Dashboard" || item.label === "Venues" || item.label === "Resources") {
-      onNavigate?.(item.label);
-    }
 
     if (item.label === "Events") {
       if (activePage !== "Dashboard") {
@@ -90,7 +94,13 @@ export default function Sidebar({
           block: "start",
         });
       }
+
+      return;
     }
+
+    // Dashboard, Venues, Resources, and Scheduling
+    // are managed by Dashboard.jsx.
+    onNavigate?.(item.label);
   }
 
   const sidebarClass = [
@@ -111,7 +121,6 @@ export default function Sidebar({
 
   return (
     <>
-      {/* Fixed mobile menu button: visible when the drawer is closed */}
       {isMobile && !mobileOpen && (
         <button
           type="button"
@@ -124,7 +133,6 @@ export default function Sidebar({
         </button>
       )}
 
-      {/* Dark overlay */}
       {isMobile && mobileOpen && (
         <button
           type="button"
@@ -139,7 +147,6 @@ export default function Sidebar({
         aria-label="EventSphere sidebar"
         aria-hidden={isMobile && !mobileOpen}
       >
-        {/* Brand and toggle stay together */}
         <div className="es-sidebar-header">
           <a
             className="es-brand"
@@ -190,24 +197,27 @@ export default function Sidebar({
 
         <nav className="es-sidebar-nav" aria-label="Main navigation">
           {navigationItems.map((item) => {
-            const isActive =
-              item.label === activePage ||
-              (item.label === "Events" && activePage === "Events");
+            const isActive = item.label === activePage;
 
-            return item.soon ? (
-              <div
-                key={item.label}
-                className="es-sidebar-link es-sidebar-disabled"
-                title={`${item.label} feature coming later`}
-                aria-disabled="true"
-              >
-                <span className="es-nav-icon" aria-hidden="true">
-                  {item.icon}
-                </span>
-                <span className="es-nav-label">{item.label}</span>
-                <span className="es-nav-soon">Later</span>
-              </div>
-            ) : (
+            if (item.soon) {
+              return (
+                <div
+                  key={item.label}
+                  className="es-sidebar-link es-sidebar-disabled"
+                  title={`${item.label} feature coming later`}
+                  aria-disabled="true"
+                >
+                  <span className="es-nav-icon" aria-hidden="true">
+                    {item.icon}
+                  </span>
+
+                  <span className="es-nav-label">{item.label}</span>
+                  <span className="es-nav-soon">Later</span>
+                </div>
+              );
+            }
+
+            return (
               <a
                 key={item.label}
                 className={`es-sidebar-link ${
@@ -216,11 +226,14 @@ export default function Sidebar({
                 href={item.href}
                 aria-current={isActive ? "page" : undefined}
                 onClick={(event) => handleNavigation(event, item)}
-                title={collapsed && !isMobile ? item.label : undefined}
+                title={
+                  collapsed && !isMobile ? item.label : undefined
+                }
               >
                 <span className="es-nav-icon" aria-hidden="true">
                   {item.icon}
                 </span>
+
                 <span className="es-nav-label">{item.label}</span>
               </a>
             );
@@ -230,7 +243,9 @@ export default function Sidebar({
         <div className="es-sidebar-bottom">
           <div
             className="es-sidebar-user"
-            title={`${user?.name || "User"} — ${user?.role || "Attendee"}`}
+            title={`${user?.name || "User"} — ${
+              user?.role || "Attendee"
+            }`}
           >
             <span className="es-user-avatar">{initial}</span>
 
@@ -249,6 +264,7 @@ export default function Sidebar({
             <span className="es-logout-icon" aria-hidden="true">
               ↪
             </span>
+
             <span className="es-logout-label">Log out</span>
           </button>
         </div>

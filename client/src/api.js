@@ -3,7 +3,6 @@ const API_BASE_URL =
   import.meta.env.VITE_API_URL || "http://localhost:5000/api";
 
 // Common API request handler
-
 export async function apiRequest(endpoint, options = {}) {
   const token = localStorage.getItem("token");
 
@@ -20,7 +19,7 @@ export async function apiRequest(endpoint, options = {}) {
     });
   } catch {
     throw new Error(
-      "Unable to connect to the server. Please try again."
+      "Unable to connect to the server. Check that the backend is running."
     );
   }
 
@@ -28,8 +27,6 @@ export async function apiRequest(endpoint, options = {}) {
 
   if (response.status === 401) {
     logoutUser();
-
-    // Notify Auth.jsx to return to the login page
     window.dispatchEvent(new Event("auth:logout"));
 
     throw new Error(
@@ -38,12 +35,13 @@ export async function apiRequest(endpoint, options = {}) {
   }
 
   if (!response.ok) {
-    throw new Error(data.message || "Something went wrong");
+    throw new Error(
+      data.message || data.error || `Request failed (${response.status}).`
+    );
   }
 
   return data;
 }
-
 
 // Register a new user
 export function registerUser(user) {
@@ -53,7 +51,7 @@ export function registerUser(user) {
   });
 }
 
-// Log in and save the authentication token and user
+// Log in and save authentication details
 export async function loginUser(credentials) {
   const data = await apiRequest("/auth/login", {
     method: "POST",
@@ -71,12 +69,11 @@ export async function loginUser(credentials) {
   return data;
 }
 
-// Fetch all events
+// Events
 export function getEvents() {
   return apiRequest("/events");
 }
 
-// Create a new event
 export function createEvent(event) {
   return apiRequest("/events", {
     method: "POST",
@@ -84,7 +81,6 @@ export function createEvent(event) {
   });
 }
 
-// Update an existing event
 export function updateEvent(id, event) {
   return apiRequest(`/events/${id}`, {
     method: "PUT",
@@ -92,57 +88,83 @@ export function updateEvent(id, event) {
   });
 }
 
-// Delete an event
 export function deleteEvent(id) {
   return apiRequest(`/events/${id}`, {
     method: "DELETE",
   });
 }
 
-// Log out and remove saved session details
+// Venues
+export function getVenues() {
+  return apiRequest("/venues");
+}
+
+export function createVenue(venue) {
+  return apiRequest("/venues", {
+    method: "POST",
+    body: JSON.stringify(venue),
+  });
+}
+
+export function updateVenue(id, venue) {
+  return apiRequest(`/venues/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(venue),
+  });
+}
+
+export function deleteVenue(id) {
+  return apiRequest(`/venues/${id}`, {
+    method: "DELETE",
+  });
+}
+
+// Resources
+export function getResources() {
+  return apiRequest("/resources");
+}
+
+export function createResource(data) {
+  return apiRequest("/resources", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export function updateResource(id, data) {
+  return apiRequest(`/resources/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+}
+
+export function deleteResource(id) {
+  return apiRequest(`/resources/${id}`, {
+    method: "DELETE",
+  });
+}
+
+// Log out
 export function logoutUser() {
   localStorage.removeItem("token");
   localStorage.removeItem("user");
 }
 
-export const getVenues = () => apiRequest("/venues");
+// Backend health check
+export async function checkBackendHealth() {
+  let response;
 
-export const createVenue = (venue) =>
-  apiRequest("/venues", {
-    method: "POST",
-    body: JSON.stringify(venue),
-  });
+  try {
+    response = await fetch(`${API_BASE_URL}/health`);
+  } catch {
+    throw new Error("Unable to connect to the backend.");
+  }
 
-export const updateVenue = (id, venue) =>
-  apiRequest(`/venues/${id}`, {
-    method: "PUT",
-    body: JSON.stringify(venue),
-  });
+  const data = await response.json().catch(() => ({}));
 
-export const deleteVenue = (id) =>
-  apiRequest(`/venues/${id}`, {
-    method: "DELETE",
-  });
-export async function getResources() {
-  return apiRequest("/api/resources");
-}
+  if (!response.ok) {
+    throw new Error(data.message || "Backend health check failed.");
+  }
 
-export async function createResource(data) {
-  return apiRequest("/api/resources", {
-    method: "POST",
-    body: JSON.stringify(data),
-  });
-}
-
-export async function updateResource(id, data) {
-  return apiRequest(`/api/resources/${id}`, {
-    method: "PUT",
-    body: JSON.stringify(data),
-  });
-}
-
-export async function deleteResource(id) {
-  return apiRequest(`/api/resources/${id}`, {
-    method: "DELETE",
-  });
+  return data;
 }

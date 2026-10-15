@@ -50,8 +50,15 @@ export default function Venues({ user }) {
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState({ ...emptyVenue });
 
-  const canManage = ["Admin", "Organizer"].includes(user?.role);
+  const userRole = String(
+  user?.role ?? user?.user?.role ?? ""
+)
+  .trim()
+  .toLowerCase();
 
+const canManage = ["admin", "administrator", "organizer"].includes(
+  userRole
+);
   const loadVenues = useCallback(async () => {
     setLoading(true);
     setError("");

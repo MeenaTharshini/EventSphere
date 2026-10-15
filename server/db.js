@@ -10,6 +10,7 @@ let db;
 async function initializeDatabase() {
   const SQL = await initSqlJs();
 
+  // Load the existing database or create a new one.
   if (fs.existsSync(dbPath)) {
     const fileBuffer = fs.readFileSync(dbPath);
     db = new SQL.Database(fileBuffer);
@@ -19,7 +20,7 @@ async function initializeDatabase() {
 
   db.run("PRAGMA foreign_keys = ON");
 
-  // Existing users table
+  // Users table
   db.run(`
     CREATE TABLE IF NOT EXISTS users (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -32,7 +33,7 @@ async function initializeDatabase() {
     )
   `);
 
-  // Existing events table
+  // Events table
   db.run(`
     CREATE TABLE IF NOT EXISTS events (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -48,7 +49,7 @@ async function initializeDatabase() {
     )
   `);
 
-  // New venues table
+  // Venues table
   db.run(`
     CREATE TABLE IF NOT EXISTS venues (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -66,14 +67,69 @@ async function initializeDatabase() {
     )
   `);
 
+  // Migrate existing events table for scheduling.
+  const eventInfo = db.exec("PRAGMA table_info(events)");
+
+  const eventColumns = eventInfo.length
+    ? eventInfo[0].values.map((column) => column[1])
+    : [];
+
+  function addColumnIfMissing(columnName, definition) {
+    if (!eventColumns.includes(columnName)) {
+      db.run(
+        `ALTER TABLE events ADD COLUMN "${columnName}" ${definition}`
+      );
+      eventColumns.push(columnName);
+    }
+  }
+
+  addColumnIfMissing("venue_id", "INTEGER");
+  addColumnIfMissing("start_time", "TEXT DEFAULT '10:00'");
+  addColumnIfMissing("end_time", "TEXT DEFAULT '16:00'");
+  addColumnIfMissing("attendee_count", "INTEGER DEFAULT 0");
+
+  // Link existing events to venues by matching venue names.
+  const existingEvents = db.exec(
+    "SELECT id, venue FROM events WHERE venue_id IS NULL"
+  );
+
+  if (existingEvents.length) {
+    for (const [eventId, venueName] of existingEvents[0].values) {
+      if (!venueName || !String(venueName).trim()) {
+        continue;
+      }
+
+      const matchingVenue = db.exec(
+        `SELECT id
+         FROM venues
+         WHERE LOWER(TRIM(name)) = LOWER(TRIM(?))
+         LIMIT 1`,
+        [String(venueName)]
+      );
+
+      if (matchingVenue.length && matchingVenue[0].values.length) {
+        const venueId = matchingVenue[0].values[0][0];
+
+        db.run(
+          "UPDATE events SET venue_id = ? WHERE id = ?",
+          [venueId, eventId]
+        );
+      }
+    }
+  }
+
+  // Persist the schema migration and data.
   saveDatabase();
 
   console.log("EventSphere database initialized successfully!");
+
   return db;
 }
 
 function saveDatabase() {
-  if (!db) throw new Error("Database is not initialized");
+  if (!db) {
+    throw new Error("Database is not initialized");
+  }
 
   const data = db.export();
   fs.writeFileSync(dbPath, Buffer.from(data));
@@ -82,5 +138,5 @@ function saveDatabase() {
 module.exports = {
   initializeDatabase,
   saveDatabase,
-  getDatabase: () => db
+  getDatabase: () => db,
 };

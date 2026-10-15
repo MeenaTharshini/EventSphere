@@ -34,7 +34,8 @@ useEffect(() => {
     setUser(null);
     setMode("login");
     setShowPassword(false);
-
+    console.log("Logged-in user:", user);
+  console.log("Logged-in role:", user?.role);
     setForm({
       name: "",
       email: "",

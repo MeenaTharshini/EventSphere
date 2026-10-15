@@ -385,34 +385,7 @@ export default function Resources({ user, onLogout }) {
 
   return (
     <section className="resource-page">
-      <header className="resource-topbar">
-        <div className="resource-context">
-          <span className="resource-context-dot" />
-          <span>Workspace overview</span>
-        </div>
-
-        <div className="resource-profile">
-          <div className="resource-avatar" aria-hidden="true">
-            {userName.charAt(0).toUpperCase()}
-          </div>
-
-          <div className="resource-profile-details">
-            <strong>{userName}</strong>
-            <small>{userRole}</small>
-          </div>
-
-          {typeof onLogout === "function" && (
-            <button
-              type="button"
-              className="resource-logout"
-              onClick={handleLogout}
-            >
-              <LogOut size={15} />
-              <span>Logout</span>
-            </button>
-          )}
-        </div>
-      </header>
+      
 
       <header className="resource-header">
         <div>
