@@ -29,14 +29,33 @@ const formatMoney = (value) =>
 const formatNumber = (value) =>
   (Number(value) || 0).toLocaleString("en-IN");
 
+const getId = (venue) =>
+  venue?.id ?? venue?._id ?? venue?.venue_id ?? null;
+
 const getLocation = (venue) =>
-  [venue.city, venue.state, venue.country]
+  [
+    venue?.city,
+    venue?.state,
+    venue?.country,
+  ]
     .map((part) => String(part || "").trim())
     .filter(Boolean)
-    .join(", ") || venue.address || "Not specified";
+    .join(", ") ||
+  venue?.address ||
+  "Not specified";
 
 const isBooked = (venue) =>
-  String(venue.availability || "").toLowerCase() === "booked";
+  String(venue?.availability || venue?.availability_status || "")
+    .trim()
+    .toLowerCase() === "booked";
+
+const getRecords = (data) => {
+  if (Array.isArray(data)) return data;
+  if (Array.isArray(data?.venues)) return data.venues;
+  if (Array.isArray(data?.items)) return data.items;
+  if (Array.isArray(data?.data)) return data.data;
+  return [];
+};
 
 export default function Venues({ user }) {
   const [venues, setVenues] = useState([]);
@@ -51,29 +70,24 @@ export default function Venues({ user }) {
   const [form, setForm] = useState({ ...emptyVenue });
 
   const userRole = String(
-  user?.role ?? user?.user?.role ?? ""
-)
-  .trim()
-  .toLowerCase();
+    user?.role ?? user?.user?.role ?? ""
+  )
+    .trim()
+    .toLowerCase();
 
-const canManage = ["admin", "administrator", "organizer"].includes(
-  userRole
-);
+  const canManage = ["admin", "administrator", "organizer"].includes(
+    userRole
+  );
+
   const loadVenues = useCallback(async () => {
     setLoading(true);
     setError("");
 
     try {
       const data = await getVenues();
-      const records = Array.isArray(data)
-        ? data
-        : Array.isArray(data?.venues)
-          ? data.venues
-          : [];
-
-      setVenues(records);
+      setVenues(getRecords(data));
     } catch (err) {
-      setError(err.message || "Unable to load venues.");
+      setError(err?.message || "Unable to load venues.");
     } finally {
       setLoading(false);
     }
@@ -90,29 +104,41 @@ const canManage = ["admin", "administrator", "organizer"].includes(
 
     return venues.filter((venue) =>
       [
-        venue.name,
-        venue.address,
-        venue.city,
-        venue.state,
-        venue.country,
-        venue.postal_code,
+        venue?.name,
+        venue?.address,
+        venue?.city,
+        venue?.state,
+        venue?.country,
+        venue?.postal_code,
       ].some((value) =>
-        String(value || "").toLowerCase().includes(query)
+        String(value ?? "").toLowerCase().includes(query)
       )
     );
   }, [venues, search]);
 
-  const totalCapacity = venues.reduce(
-    (total, venue) => total + (Number(venue.capacity) || 0),
-    0
+  const totalCapacity = useMemo(
+    () =>
+      venues.reduce(
+        (total, venue) => total + (Number(venue?.capacity) || 0),
+        0
+      ),
+    [venues]
   );
 
-  const bookedCount = venues.filter(isBooked).length;
+  const bookedCount = useMemo(
+    () => venues.filter(isBooked).length,
+    [venues]
+  );
+
   const availableCount = venues.length - bookedCount;
 
   function updateField(event) {
     const { name, value } = event.target;
-    setForm((previous) => ({ ...previous, [name]: value }));
+
+    setForm((previous) => ({
+      ...previous,
+      [name]: value,
+    }));
   }
 
   function openAddForm() {
@@ -124,7 +150,14 @@ const canManage = ["admin", "administrator", "organizer"].includes(
   }
 
   function openEditForm(venue) {
-    setEditingId(venue.id);
+    const venueId = getId(venue);
+
+    if (venueId == null) {
+      setError("This venue has no valid ID and cannot be edited.");
+      return;
+    }
+
+    setEditingId(venueId);
     setForm({
       name: venue.name ?? "",
       address: venue.address ?? "",
@@ -142,6 +175,8 @@ const canManage = ["admin", "administrator", "organizer"].includes(
   }
 
   function closeForm() {
+    if (saving) return;
+
     setShowForm(false);
     setEditingId(null);
     setForm({ ...emptyVenue });
@@ -149,6 +184,9 @@ const canManage = ["admin", "administrator", "organizer"].includes(
 
   async function handleSubmit(event) {
     event.preventDefault();
+
+    if (!canManage || saving) return;
+
     setError("");
     setNotice("");
 
@@ -201,16 +239,28 @@ const canManage = ["admin", "administrator", "organizer"].includes(
         setNotice("Venue added successfully.");
       }
 
-      closeForm();
+      setShowForm(false);
+      setEditingId(null);
+      setForm({ ...emptyVenue });
+
       await loadVenues();
     } catch (err) {
-      setError(err.message || "Unable to save venue.");
+      setError(err?.message || "Unable to save venue.");
     } finally {
       setSaving(false);
     }
   }
 
   async function handleDelete(venue) {
+    if (!canManage) return;
+
+    const venueId = getId(venue);
+
+    if (venueId == null) {
+      setError("This venue has no valid ID and cannot be deleted.");
+      return;
+    }
+
     const confirmed = window.confirm(
       `Delete "${venue.name}"? This action cannot be undone.`
     );
@@ -219,14 +269,14 @@ const canManage = ["admin", "administrator", "organizer"].includes(
 
     setError("");
     setNotice("");
-    setDeletingId(venue.id);
+    setDeletingId(venueId);
 
     try {
-      await deleteVenue(venue.id);
+      await deleteVenue(venueId);
       setNotice(`"${venue.name}" was deleted.`);
       await loadVenues();
     } catch (err) {
-      setError(err.message || "Unable to delete venue.");
+      setError(err?.message || "Unable to delete venue.");
     } finally {
       setDeletingId(null);
     }
@@ -234,8 +284,6 @@ const canManage = ["admin", "administrator", "organizer"].includes(
 
   return (
     <section className="venues-page">
-     
-
       <header className="venues-header">
         <div>
           <p className="venues-eyebrow">EVENTSPHERE WORKSPACE</p>
@@ -250,6 +298,7 @@ const canManage = ["admin", "administrator", "organizer"].includes(
             type="button"
             className="venues-primary"
             onClick={showForm ? closeForm : openAddForm}
+            disabled={saving}
           >
             <span aria-hidden="true">{showForm ? "×" : "＋"}</span>
             {showForm ? "Cancel" : "Add venue"}
@@ -299,7 +348,11 @@ const canManage = ["admin", "administrator", "organizer"].includes(
         <div className="venues-message venues-message-success" role="status">
           <span>✓</span>
           <p>{notice}</p>
-          <button type="button" onClick={() => setNotice("")} aria-label="Dismiss notification">
+          <button
+            type="button"
+            onClick={() => setNotice("")}
+            aria-label="Dismiss notification"
+          >
             ×
           </button>
         </div>
@@ -309,7 +362,11 @@ const canManage = ["admin", "administrator", "organizer"].includes(
         <div className="venues-message venues-message-error" role="alert">
           <span>!</span>
           <p>{error}</p>
-          <button type="button" onClick={() => setError("")} aria-label="Dismiss error">
+          <button
+            type="button"
+            onClick={() => setError("")}
+            aria-label="Dismiss error"
+          >
             ×
           </button>
         </div>
@@ -362,22 +419,42 @@ const canManage = ["admin", "administrator", "organizer"].includes(
 
             <label className="venues-field">
               <span>City</span>
-              <input name="city" value={form.city} onChange={updateField} placeholder="Enter city" />
+              <input
+                name="city"
+                value={form.city}
+                onChange={updateField}
+                placeholder="Enter city"
+              />
             </label>
 
             <label className="venues-field">
               <span>State</span>
-              <input name="state" value={form.state} onChange={updateField} placeholder="Enter state" />
+              <input
+                name="state"
+                value={form.state}
+                onChange={updateField}
+                placeholder="Enter state"
+              />
             </label>
 
             <label className="venues-field">
               <span>Country</span>
-              <input name="country" value={form.country} onChange={updateField} placeholder="Enter country" />
+              <input
+                name="country"
+                value={form.country}
+                onChange={updateField}
+                placeholder="Enter country"
+              />
             </label>
 
             <label className="venues-field">
               <span>PIN / Postal code</span>
-              <input name="postal_code" value={form.postal_code} onChange={updateField} placeholder="Enter postal code" />
+              <input
+                name="postal_code"
+                value={form.postal_code}
+                onChange={updateField}
+                placeholder="Enter postal code"
+              />
             </label>
 
             <label className="venues-field">
@@ -408,11 +485,25 @@ const canManage = ["admin", "administrator", "organizer"].includes(
           </div>
 
           <div className="venues-form-actions">
-            <button type="button" className="venues-secondary" onClick={closeForm} disabled={saving}>
+            <button
+              type="button"
+              className="venues-secondary"
+              onClick={closeForm}
+              disabled={saving}
+            >
               Cancel
             </button>
-            <button type="submit" className="venues-primary" disabled={saving}>
-              {saving ? "Saving..." : editingId !== null ? "Save changes" : "Save venue"}
+
+            <button
+              type="submit"
+              className="venues-primary"
+              disabled={saving}
+            >
+              {saving
+                ? "Saving..."
+                : editingId !== null
+                  ? "Save changes"
+                  : "Save venue"}
             </button>
           </div>
         </form>
@@ -460,14 +551,23 @@ const canManage = ["admin", "administrator", "organizer"].includes(
         ) : filteredVenues.length === 0 ? (
           <div className="venues-empty">
             <span className="venues-empty-icon">⌖</span>
-            <h3>{venues.length === 0 ? "No venues added yet" : "No matching venues"}</h3>
+            <h3>
+              {venues.length === 0
+                ? "No venues added yet"
+                : "No matching venues"}
+            </h3>
             <p>
               {search
                 ? "Try another name, city, state, or postal code."
                 : "Add a venue to start building your directory."}
             </p>
+
             {canManage && venues.length === 0 && (
-              <button type="button" className="venues-primary" onClick={openAddForm}>
+              <button
+                type="button"
+                className="venues-primary"
+                onClick={openAddForm}
+              >
                 ＋ Add your first venue
               </button>
             )}
@@ -488,56 +588,75 @@ const canManage = ["admin", "administrator", "organizer"].includes(
               </thead>
 
               <tbody>
-                {filteredVenues.map((venue, index) => (
-                  <tr key={venue.id}>
-                    <td className="venues-row-number">{index + 1}</td>
+                {filteredVenues.map((venue, index) => {
+                  const venueId = getId(venue);
+                  const booked = isBooked(venue);
 
-                    <td>
-                      <strong className="venues-table-name">{venue.name}</strong>
-                      {venue.address && (
-                        <small className="venues-table-address">{venue.address}</small>
-                      )}
-                    </td>
+                  return (
+                    <tr key={venueId ?? `${venue.name}-${index}`}>
+                      <td className="venues-row-number">{index + 1}</td>
 
-                    <td>{getLocation(venue)}</td>
-                    <td>{formatNumber(venue.capacity)}</td>
-                    <td className="venues-cost-cell">{formatMoney(venue.cost_per_day)}</td>
+                      <td>
+                        <strong className="venues-table-name">
+                          {venue.name || "Unnamed venue"}
+                        </strong>
+                        {venue.address && (
+                          <small className="venues-table-address">
+                            {venue.address}
+                          </small>
+                        )}
+                      </td>
 
-                    <td>
-                      <span className={`venues-availability ${isBooked(venue) ? "is-booked" : "is-available"}`}>
-                        {isBooked(venue) ? "Booked" : "Available"}
-                      </span>
-                    </td>
+                      <td>{getLocation(venue)}</td>
+                      <td>{formatNumber(venue.capacity)}</td>
+                      <td className="venues-cost-cell">
+                        {formatMoney(venue.cost_per_day)}
+                      </td>
 
-                    <td>
-                      {canManage ? (
-                        <div className="venues-row-actions">
-                          <button
-                            type="button"
-                            className="venues-icon-action venues-edit-action"
-                            title="Edit venue"
-                            aria-label={`Edit ${venue.name}`}
-                            onClick={() => openEditForm(venue)}
-                          >
-                            ✎
-                          </button>
-                          <button
-                            type="button"
-                            className="venues-icon-action venues-delete-action"
-                            title="Delete venue"
-                            aria-label={`Delete ${venue.name}`}
-                            disabled={deletingId === venue.id}
-                            onClick={() => handleDelete(venue)}
-                          >
-                            {deletingId === venue.id ? "…" : "×"}
-                          </button>
-                        </div>
-                      ) : (
-                        <span>—</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
+                      <td>
+                        <span
+                          className={`venues-availability ${
+                            booked ? "is-booked" : "is-available"
+                          }`}
+                        >
+                          {booked ? "Booked" : "Available"}
+                        </span>
+                      </td>
+
+                      <td>
+                        {canManage ? (
+                          <div className="venues-row-actions">
+                            <button
+                              type="button"
+                              className="venues-icon-action venues-edit-action"
+                              title="Edit venue"
+                              aria-label={`Edit ${venue.name || "venue"}`}
+                              disabled={venueId == null || saving}
+                              onClick={() => openEditForm(venue)}
+                            >
+                              ✎
+                            </button>
+
+                            <button
+                              type="button"
+                              className="venues-icon-action venues-delete-action"
+                              title="Delete venue"
+                              aria-label={`Delete ${venue.name || "venue"}`}
+                              disabled={
+                                venueId == null || deletingId === venueId
+                              }
+                              onClick={() => handleDelete(venue)}
+                            >
+                              {deletingId === venueId ? "…" : "×"}
+                            </button>
+                          </div>
+                        ) : (
+                          <span>—</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

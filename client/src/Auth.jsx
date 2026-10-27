@@ -1,17 +1,36 @@
 
 import { useEffect, useState } from "react";
-import { loginUser, registerUser, logoutUser } from "./api";
+import {
+  loginUser,
+  registerUser,
+  logoutUser,
+} from "./api";
+
 import Dashboard from "./Dashboard";
+import AttendeeRegistration from "./AttendeeRegistration";
 import "./Auth.css";
 
+const INITIAL_FORM = {
+  name: "",
+  email: "",
+  password: "",
+  role: "Attendee",
+};
+
+function getSavedUser() {
+  try {
+    return JSON.parse(localStorage.getItem("user") || "null");
+  } catch {
+    return null;
+  }
+}
+
+function getUserRole(user) {
+  return String(user?.role || "").trim().toLowerCase();
+}
+
 export default function Auth() {
-  const [user, setUser] = useState(() => {
-    try {
-      return JSON.parse(localStorage.getItem("user") || "null");
-    } catch {
-      return null;
-    }
-  });
+  const [user, setUser] = useState(getSavedUser);
 
   const [mode, setMode] = useState("login");
   const [showPassword, setShowPassword] = useState(false);
@@ -19,41 +38,29 @@ export default function Auth() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
-  const [form, setForm] = useState({
-    name: "",
-    email: "",
-    password: "",
-    role: "Attendee",
-  });
+  const [form, setForm] = useState(INITIAL_FORM);
 
-  // Automatically return to login when the API reports an
-  // invalid or expired authentication session.
-  
-useEffect(() => {
-  function handleAuthLogout() {
-    setUser(null);
-    setMode("login");
-    setShowPassword(false);
-    console.log("Logged-in user:", user);
-  console.log("Logged-in role:", user?.role);
-    setForm({
-      name: "",
-      email: "",
-      password: "",
-      role: "Attendee",
-    });
+  // Return to the login page when the session expires.
+  useEffect(() => {
+    function handleAuthLogout() {
+      logoutUser();
+      setUser(null);
+      setMode("login");
+      setShowPassword(false);
+      setForm(INITIAL_FORM);
+      setError("Your session has expired. Please sign in again.");
+      setSuccess("");
+    }
 
-    setError("Your session has expired. Please sign in again.");
-    setSuccess("");
-  }
+    window.addEventListener("auth:logout", handleAuthLogout);
 
-  window.addEventListener("auth:logout", handleAuthLogout);
-
-  return () => {
-    window.removeEventListener("auth:logout", handleAuthLogout);
-  };
-}, []);
-
+    return () => {
+      window.removeEventListener(
+        "auth:logout",
+        handleAuthLogout
+      );
+    };
+  }, []);
 
   function handleChange(event) {
     const { name, value } = event.target;
@@ -73,6 +80,7 @@ useEffect(() => {
 
   async function handleSubmit(event) {
     event.preventDefault();
+
     setError("");
     setSuccess("");
 
@@ -89,7 +97,9 @@ useEffect(() => {
     }
 
     if (mode === "signup" && form.password.length < 6) {
-      setError("Your password must contain at least 6 characters.");
+      setError(
+        "Your password must contain at least 6 characters."
+      );
       return;
     }
 
@@ -104,7 +114,9 @@ useEffect(() => {
           role: form.role,
         });
 
-        setSuccess("Account created successfully! Please sign in.");
+        setSuccess(
+          "Account created successfully! Please sign in."
+        );
 
         setForm((previous) => ({
           ...previous,
@@ -120,22 +132,33 @@ useEffect(() => {
           password: form.password,
         });
 
-        if (!result.user || !result.token) {
+        if (!result?.user || !result?.token) {
           logoutUser();
-          throw new Error("Login failed. Please try again.");
+          throw new Error(
+            "Login failed. Please try again."
+          );
         }
 
+        // Keep the saved user consistent with the API result.
+        localStorage.setItem(
+          "user",
+          JSON.stringify(result.user)
+        );
+
         setUser(result.user);
+
         setForm((previous) => ({
           ...previous,
           password: "",
         }));
-        setSuccess("");
+
         setError("");
+        setSuccess("");
       }
     } catch (err) {
       setError(
-        err.message || "Something went wrong. Please try again."
+        err?.message ||
+          "Something went wrong. Please try again."
       );
     } finally {
       setLoading(false);
@@ -144,23 +167,40 @@ useEffect(() => {
 
   function handleLogout() {
     logoutUser();
+
     setUser(null);
     setMode("login");
     setShowPassword(false);
-
-    setForm({
-      name: "",
-      email: "",
-      password: "",
-      role: "Attendee",
-    });
-
+    setForm(INITIAL_FORM);
     setError("");
     setSuccess("You have been signed out.");
   }
 
-  if (user) {
-    return <Dashboard user={user} onLogout={handleLogout} />;
+  // Route authenticated users according to their role.
+  const role = getUserRole(user);
+
+  if (user && role === "attendee") {
+    return (
+      <AttendeeRegistration
+        user={user}
+        onLogout={handleLogout}
+      />
+    );
+  }
+
+  if (user && (role === "organizer" || role === "vendor")) {
+    return (
+      <Dashboard
+        user={user}
+        onLogout={handleLogout}
+      />
+    );
+  }
+
+  // If a saved user has an unexpected role, do not trap them
+  // on the login screen or show the wrong role-specific page.
+  if (user && !["attendee", "organizer", "vendor"].includes(role)) {
+    logoutUser();
   }
 
   return (
@@ -177,7 +217,13 @@ useEffect(() => {
                 strokeLinecap="round"
                 strokeLinejoin="round"
               >
-                <rect x="3" y="5" width="18" height="16" rx="2" />
+                <rect
+                  x="3"
+                  y="5"
+                  width="18"
+                  height="16"
+                  rx="2"
+                />
                 <path d="M16 3v4M8 3v4M3 10h18" />
                 <path d="m9 15 2 2 4-4" />
               </svg>
@@ -186,7 +232,9 @@ useEffect(() => {
           </div>
 
           <div className="visual-copy">
-            <span className="eyebrow">YOUR EVENTS. ONE PLACE.</span>
+            <span className="eyebrow">
+              YOUR EVENTS. ONE PLACE.
+            </span>
 
             <h1>
               Every great
@@ -234,7 +282,9 @@ useEffect(() => {
           <div className="auth-content">
             <div className="auth-heading">
               <span className="eyebrow">
-                {mode === "login" ? "WELCOME BACK" : "GET STARTED"}
+                {mode === "login"
+                  ? "WELCOME BACK"
+                  : "GET STARTED"}
               </span>
 
               <h2>
@@ -280,7 +330,10 @@ useEffect(() => {
               </div>
             )}
 
-            <form onSubmit={handleSubmit} className="auth-form">
+            <form
+              onSubmit={handleSubmit}
+              className="auth-form"
+            >
               {mode === "signup" && (
                 <div className="form-field">
                   <label htmlFor="name">Full name</label>
@@ -359,7 +412,9 @@ useEffect(() => {
                         ? "current-password"
                         : "new-password"
                     }
-                    minLength={mode === "signup" ? 6 : undefined}
+                    minLength={
+                      mode === "signup" ? 6 : undefined
+                    }
                     required
                   />
 
@@ -370,7 +425,9 @@ useEffect(() => {
                       setShowPassword((value) => !value)
                     }
                     aria-label={
-                      showPassword ? "Hide password" : "Show password"
+                      showPassword
+                        ? "Hide password"
+                        : "Show password"
                     }
                   >
                     {showPassword ? "Hide" : "Show"}
@@ -397,7 +454,9 @@ useEffect(() => {
                     ? "Sign in to EventSphere"
                     : "Create account"}
 
-                {!loading && <span aria-hidden="true">→</span>}
+                {!loading && (
+                  <span aria-hidden="true">→</span>
+                )}
               </button>
             </form>
 

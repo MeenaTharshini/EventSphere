@@ -1,5 +1,5 @@
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import "./Sidebar.css";
 
 const navigationItems = [
@@ -8,9 +8,6 @@ const navigationItems = [
   { label: "Venues", icon: "⌖", href: "#venues" },
   { label: "Resources", icon: "◇", href: "#resources" },
   { label: "Scheduling", icon: "◷", href: "#scheduling" },
-  { label: "Attendees", icon: "♙", href: "#attendees", soon: true },
-  { label: "Vendors", icon: "♧", href: "#vendors", soon: true },
-  { label: "Reports", icon: "▥", href: "#reports", soon: true },
 ];
 
 export default function Sidebar({
@@ -23,8 +20,14 @@ export default function Sidebar({
   const [mobileOpen, setMobileOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
 
-  const initial = (user?.name || "U").charAt(0).toUpperCase();
+  const menuButtonRef = useRef(null);
+  const sidebarRef = useRef(null);
 
+  const userName = user?.name || user?.full_name || "User";
+  const userRole = user?.role || user?.user?.role || "Attendee";
+  const initial = userName.charAt(0).toUpperCase();
+
+  // Detect mobile screen size.
   useEffect(() => {
     const mediaQuery = window.matchMedia("(max-width: 900px)");
 
@@ -41,66 +44,72 @@ export default function Sidebar({
     };
   }, []);
 
+  // Handle Escape and keyboard focus on the mobile menu.
   useEffect(() => {
-    if (!mobileOpen) return;
+    if (!mobileOpen || !isMobile) return;
 
     const handleEscape = (event) => {
       if (event.key === "Escape") {
         setMobileOpen(false);
+        menuButtonRef.current?.focus();
       }
     };
 
     window.addEventListener("keydown", handleEscape);
 
+    const firstLink =
+      sidebarRef.current?.querySelector(
+        ".es-sidebar-nav a, .es-brand"
+      );
+
+    firstLink?.focus();
+
     return () => {
       window.removeEventListener("keydown", handleEscape);
     };
-  }, [mobileOpen]);
+  }, [mobileOpen, isMobile]);
 
   function toggleSidebar() {
     if (isMobile) {
-      setMobileOpen((previous) => !previous);
+      if (mobileOpen) {
+        setMobileOpen(false);
+        menuButtonRef.current?.focus();
+      } else {
+        setMobileOpen(true);
+      }
     } else {
       setCollapsed((previous) => !previous);
     }
   }
 
   function closeMobileSidebar() {
-    if (isMobile) {
+    if (isMobile && mobileOpen) {
       setMobileOpen(false);
+      menuButtonRef.current?.focus();
     }
   }
 
+  // Dashboard and Events are separate pages.
   function handleNavigation(event, item) {
     event.preventDefault();
 
     if (item.soon) return;
 
-    closeMobileSidebar();
-
-    if (item.label === "Events") {
-      if (activePage !== "Dashboard") {
-        onNavigate?.("Dashboard");
-
-        window.setTimeout(() => {
-          document.getElementById("events")?.scrollIntoView({
-            behavior: "smooth",
-            block: "start",
-          });
-        }, 100);
-      } else {
-        document.getElementById("events")?.scrollIntoView({
-          behavior: "smooth",
-          block: "start",
-        });
-      }
-
-      return;
+    if (typeof onNavigate === "function") {
+      onNavigate(item.label);
     }
 
-    // Dashboard, Venues, Resources, and Scheduling
-    // are managed by Dashboard.jsx.
-    onNavigate?.(item.label);
+    closeMobileSidebar();
+  }
+
+  function handleBrandClick(event) {
+    event.preventDefault();
+
+    if (typeof onNavigate === "function") {
+      onNavigate("Dashboard");
+    }
+
+    closeMobileSidebar();
   }
 
   const sidebarClass = [
@@ -121,42 +130,48 @@ export default function Sidebar({
 
   return (
     <>
-      {isMobile && !mobileOpen && (
+      {/* Mobile menu button */}
+      {isMobile && (
         <button
+          ref={menuButtonRef}
           type="button"
           className="es-mobile-menu-button"
           onClick={() => setMobileOpen(true)}
           aria-label="Open navigation menu"
-          aria-expanded={false}
+          aria-expanded={mobileOpen}
+          aria-controls="eventsphere-sidebar"
+          hidden={mobileOpen}
         >
           <span aria-hidden="true">☰</span>
         </button>
       )}
 
+      {/* Mobile overlay */}
       {isMobile && mobileOpen && (
         <button
           type="button"
           className="es-sidebar-overlay"
           aria-label="Close navigation menu"
-          onClick={() => setMobileOpen(false)}
+          onClick={closeMobileSidebar}
         />
       )}
 
+      {/* Sidebar */}
       <aside
+        ref={sidebarRef}
+        id="eventsphere-sidebar"
         className={sidebarClass}
         aria-label="EventSphere sidebar"
         aria-hidden={isMobile && !mobileOpen}
+        inert={isMobile && !mobileOpen}
       >
         <div className="es-sidebar-header">
           <a
             className="es-brand"
             href="#overview"
-            onClick={(event) => {
-              event.preventDefault();
-              onNavigate?.("Dashboard");
-              closeMobileSidebar();
-            }}
+            onClick={handleBrandClick}
             title="EventSphere"
+            tabIndex={isMobile && !mobileOpen ? -1 : 0}
           >
             <span className="es-brand-icon" aria-hidden="true">
               <svg
@@ -226,9 +241,8 @@ export default function Sidebar({
                 href={item.href}
                 aria-current={isActive ? "page" : undefined}
                 onClick={(event) => handleNavigation(event, item)}
-                title={
-                  collapsed && !isMobile ? item.label : undefined
-                }
+                title={collapsed && !isMobile ? item.label : undefined}
+                tabIndex={isMobile && !mobileOpen ? -1 : 0}
               >
                 <span className="es-nav-icon" aria-hidden="true">
                   {item.icon}
@@ -240,18 +254,17 @@ export default function Sidebar({
           })}
         </nav>
 
+        {/* User information and logout */}
         <div className="es-sidebar-bottom">
           <div
             className="es-sidebar-user"
-            title={`${user?.name || "User"} — ${
-              user?.role || "Attendee"
-            }`}
+            title={`${userName} — ${userRole}`}
           >
             <span className="es-user-avatar">{initial}</span>
 
             <span className="es-user-details">
-              <strong>{user?.name || "User"}</strong>
-              <small>{user?.role || "Attendee"}</small>
+              <strong>{userName}</strong>
+              <small>{userRole}</small>
             </span>
           </div>
 

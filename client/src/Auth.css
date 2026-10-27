@@ -11,15 +11,12 @@
   --forest-dark: #102e29;
   --green: #267565;
   --green-hover: #1d6054;
-
   --gold: #b99a5e;
   --ivory: #faf8f3;
   --white: #ffffff;
-
   --ink: #202b28;
   --muted: #747d77;
   --border: #e3e5dd;
-
   --danger: #a53c43;
   --danger-bg: #fff2f2;
   --success: #176b4e;
@@ -59,8 +56,13 @@ select:focus-visible {
   outline-offset: 3px;
 }
 
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
 /* =========================================
-   PAGE LAYOUT
+   LOGIN AND SIGNUP PAGE
 ========================================= */
 
 .auth-page {
@@ -84,9 +86,7 @@ select:focus-visible {
   border-radius: 12px;
 }
 
-/* =========================================
-   LEFT BRAND PANEL
-========================================= */
+/* Left brand panel */
 
 .auth-visual {
   display: flex;
@@ -209,9 +209,7 @@ select:focus-visible {
   border-radius: 50%;
 }
 
-/* =========================================
-   RIGHT AUTHENTICATION PANEL
-========================================= */
+/* Right authentication panel */
 
 .auth-panel {
   display: flex;
@@ -249,9 +247,7 @@ select:focus-visible {
   line-height: 1.8;
 }
 
-/* =========================================
-   LOGIN AND SIGNUP TABS
-========================================= */
+/* Login and signup tabs */
 
 .auth-tabs {
   display: grid;
@@ -283,9 +279,7 @@ select:focus-visible {
   border-bottom-color: var(--gold);
 }
 
-/* =========================================
-   FORM
-========================================= */
+/* Authentication form */
 
 .auth-form {
   display: grid;
@@ -418,9 +412,7 @@ select:focus-visible {
   line-height: 1.7;
 }
 
-/* =========================================
-   SUBMIT BUTTON
-========================================= */
+/* Submit button */
 
 .submit-button {
   display: flex;
@@ -450,20 +442,13 @@ select:focus-visible {
   background: var(--green-hover);
 }
 
-.submit-button:disabled {
-  cursor: wait;
-  opacity: 0.65;
-}
-
 .submit-button span {
   font-size: 17px;
   font-weight: 400;
   line-height: 1;
 }
 
-/* =========================================
-   FEEDBACK MESSAGES
-========================================= */
+/* Authentication feedback */
 
 .auth-message {
   margin: 0 0 17px;
@@ -487,9 +472,7 @@ select:focus-visible {
   border-color: #cde6d6;
 }
 
-/* =========================================
-   FOOTER AND MODE SWITCH
-========================================= */
+/* Authentication footer */
 
 .auth-switch {
   margin-top: 24px;
@@ -525,10 +508,305 @@ select:focus-visible {
   line-height: 1.8;
 }
 
-/* Mobile-only brand */
-
 .mobile-brand {
   display: none;
+}
+
+/* =========================================
+   ATTENDEE EVENT REGISTRATION PAGE
+========================================= */
+
+.attendee-registration-page {
+  min-height: 100vh;
+  padding: 0 28px 30px;
+  color: var(--ink);
+  background: var(--ivory);
+}
+
+/* Header */
+
+.attendee-topbar {
+  display: flex;
+  max-width: 960px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  margin: 0 auto;
+  padding: 22px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.attendee-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--forest);
+  font-family: "Manrope", sans-serif;
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+}
+
+.attendee-brand-mark {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
+  place-items: center;
+  color: var(--forest-dark);
+  background: var(--gold);
+  border-radius: 8px;
+}
+
+.attendee-user {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.attendee-user button {
+  padding: 9px 14px;
+  color: var(--forest);
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.attendee-user button:hover {
+  border-color: var(--gold);
+  background: #fdfbf6;
+}
+
+/* Registration card */
+
+.attendee-registration-card {
+  width: 100%;
+  max-width: 700px;
+  margin: 36px auto 28px;
+  padding: 38px 42px;
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 12px 34px rgb(23 61 53 / 5%);
+}
+
+.attendee-form-heading {
+  margin-bottom: 30px;
+}
+
+.attendee-eyebrow {
+  display: inline-block;
+  color: var(--green);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1.8px;
+  line-height: 1.7;
+}
+
+.attendee-form-heading h1 {
+  margin: 10px 0;
+  color: var(--forest-dark);
+  font-family: "Manrope", sans-serif;
+  font-size: clamp(25px, 3vw, 32px);
+  font-weight: 800;
+  line-height: 1.3;
+  letter-spacing: -0.7px;
+}
+
+.attendee-form-heading p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.8;
+}
+
+/* Registration form */
+
+.attendee-registration-card form {
+  display: grid;
+  gap: 20px;
+}
+
+.attendee-field {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.attendee-field label {
+  color: #303c35;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.attendee-field input,
+.attendee-field select {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  min-height: 47px;
+  padding: 0 14px;
+  color: var(--ink);
+  background: var(--white);
+  border: 1px solid #d9ded6;
+  border-radius: 6px;
+  outline: none;
+  font-size: 13px;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+
+.attendee-field input::placeholder {
+  color: #9aa199;
+  opacity: 1;
+}
+
+.attendee-field input:hover,
+.attendee-field select:hover {
+  border-color: #a9b7ac;
+}
+
+.attendee-field input:focus,
+.attendee-field select:focus {
+  border-color: var(--green);
+  box-shadow: 0 0 0 3px rgb(38 117 101 / 9%);
+}
+
+.attendee-field select {
+  cursor: pointer;
+}
+
+.attendee-field select:disabled {
+  color: var(--muted);
+  background: #f5f5f1;
+  cursor: wait;
+}
+
+.attendee-field-hint {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+/* Attendee category */
+
+.attendee-category-field {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+  margin: 2px 0 4px;
+  padding: 0;
+  border: 0;
+}
+
+.attendee-category-field legend {
+  margin-bottom: 6px;
+  padding: 0;
+  color: #303c35;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.attendee-radio-option {
+  display: flex;
+  width: fit-content;
+  align-items: center;
+  gap: 11px;
+  color: var(--ink);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.attendee-radio-option input {
+  width: 17px;
+  height: 17px;
+  flex: 0 0 17px;
+  margin: 0;
+  accent-color: var(--forest);
+  cursor: pointer;
+}
+
+/* Registration submit button */
+
+.attendee-submit-button {
+  display: flex;
+  width: 100%;
+  min-height: 47px;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 4px;
+  padding: 12px 16px;
+  color: var(--white);
+  background: var(--forest);
+  border: 1px solid var(--forest);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  transition: background 150ms ease, border-color 150ms ease;
+}
+
+.attendee-submit-button:hover:not(:disabled) {
+  background: var(--forest-dark);
+  border-color: var(--forest-dark);
+}
+
+.attendee-submit-button:active:not(:disabled) {
+  background: var(--green-hover);
+}
+
+.attendee-submit-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.attendee-submit-button span {
+  font-size: 17px;
+  font-weight: 400;
+  line-height: 1;
+}
+
+/* Registration feedback */
+
+.attendee-message {
+  margin: 0 0 20px;
+  padding: 12px 14px;
+  border: 1px solid;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+
+.attendee-message.error {
+  color: var(--danger);
+  background: var(--danger-bg);
+  border-color: #f0d1d3;
+}
+
+.attendee-message.success {
+  color: var(--success);
+  background: var(--success-bg);
+  border-color: #cde6d6;
+}
+
+/* Registration footer */
+
+.attendee-footer {
+  max-width: 700px;
+  margin: 0 auto;
+  padding: 10px 0;
+  color: #81877f;
+  text-align: center;
+  font-size: 10px;
+  line-height: 1.8;
 }
 
 /* =========================================
@@ -560,6 +838,10 @@ select:focus-visible {
 
   .auth-panel {
     padding: 35px 28px;
+  }
+
+  .attendee-registration-card {
+    padding: 32px;
   }
 }
 
@@ -645,6 +927,73 @@ select:focus-visible {
   .auth-legal {
     margin-top: 22px;
   }
+
+  /* Attendee registration on mobile */
+
+  .attendee-registration-page {
+    padding: 0 15px 24px;
+  }
+
+  .attendee-topbar {
+    gap: 10px;
+    padding: 17px 0;
+  }
+
+  .attendee-brand {
+    gap: 9px;
+    font-size: 17px;
+  }
+
+  .attendee-brand-mark {
+    width: 36px;
+    height: 36px;
+    flex-basis: 36px;
+    font-size: 12px;
+  }
+
+  .attendee-user {
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 6px;
+    font-size: 10px;
+  }
+
+  .attendee-user button {
+    padding: 7px 10px;
+    font-size: 11px;
+  }
+
+  .attendee-registration-card {
+    margin: 20px auto;
+    padding: 25px 19px;
+    border-radius: 9px;
+  }
+
+  .attendee-form-heading {
+    margin-bottom: 25px;
+  }
+
+  .attendee-form-heading h1 {
+    font-size: 26px;
+  }
+
+  .attendee-form-heading p {
+    font-size: 12px;
+  }
+
+  .attendee-registration-card form {
+    gap: 18px;
+  }
+
+  .attendee-field input,
+  .attendee-field select {
+    min-height: 47px;
+    font-size: 13px;
+  }
+
+  .attendee-category-field {
+    gap: 15px;
+  }
 }
 
 /* Small phones */
@@ -666,9 +1015,24 @@ select:focus-visible {
   .auth-heading p {
     font-size: 11px;
   }
+
+  .attendee-registration-page {
+    padding-right: 11px;
+    padding-left: 11px;
+  }
+
+  .attendee-registration-card {
+    padding: 22px 15px;
+  }
+
+  .attendee-brand {
+    font-size: 15px;
+  }
 }
 
-/* Accessibility */
+/* =========================================
+   ACCESSIBILITY
+========================================= */
 
 @media (prefers-reduced-motion: reduce) {
   *,
