@@ -1,4 +1,3 @@
-
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   CalendarDays,
@@ -22,6 +21,7 @@ import {
   Download,
   Copy,
   ShieldCheck,
+  Trash2,
 } from "lucide-react";
 
 import {
@@ -29,6 +29,7 @@ import {
   registerAttendee,
   getMyRegistrations,
   getTicket,
+  unregisterAttendee,
 } from "./api";
 
 import "./AttendeeRegistration.css";
@@ -38,6 +39,8 @@ const CATEGORIES = [
   { value: "VIP", color: "#b18b43" },
   { value: "Speaker", color: "#7560a8" },
   { value: "Volunteer", color: "#ad7144" },
+  { value: "Guest", color: "#4f7ca8" },
+  { value: "Sponsor", color: "#a65c82" },
 ];
 
 const INITIAL_FORM = {
@@ -89,15 +92,10 @@ function normalizeEvents(response) {
             "";
 
       return {
-        id: String(
-          event._id ?? event.id ?? event.event_id ?? ""
-        ).trim(),
+        id: String(event._id ?? event.id ?? event.event_id ?? "").trim(),
 
         name: String(
-          event.name ??
-            event.title ??
-            event.event_name ??
-            ""
+          event.name ?? event.title ?? event.event_name ?? ""
         ).trim(),
 
         date:
@@ -223,9 +221,7 @@ function normalizeRegistrations(response, availableEvents = []) {
           registration.attendee_category ??
           "General",
 
-        status: String(
-          registration.status ?? "Registered"
-        )
+        status: String(registration.status ?? "Registered")
           .trim()
           .toLowerCase(),
 
@@ -277,8 +273,7 @@ function normalizeTicketResponse(response) {
       ? result.ticket
       : result;
 
-  const ticketId =
-    ticket.ticket_id ?? ticket.ticketId ?? "";
+  const ticketId = ticket.ticket_id ?? ticket.ticketId ?? "";
 
   if (!ticketId) return null;
 
@@ -462,6 +457,12 @@ export default function AttendeeRegistration({ user, onLogout }) {
   const [copiedTicketId, setCopiedTicketId] = useState(false);
   const [loadingTicket, setLoadingTicket] = useState(false);
 
+  // Cancellation state
+  const [cancelingRegistrationId, setCancelingRegistrationId] =
+    useState(null);
+  const [cancellationMessage, setCancellationMessage] = useState("");
+  const [cancellationError, setCancellationError] = useState("");
+
   const selectedEvent = useMemo(
     () =>
       events.find((event) => event.id === String(form.event_id)) ??
@@ -493,22 +494,25 @@ export default function AttendeeRegistration({ user, onLogout }) {
     }
   }, []);
 
-  const loadMyRegistrations = useCallback(async (availableEvents = []) => {
-    setLoadingRegistrations(true);
-    setRegistrationsError("");
+  const loadMyRegistrations = useCallback(
+    async (availableEvents = []) => {
+      setLoadingRegistrations(true);
+      setRegistrationsError("");
 
-    try {
-      const response = await getMyRegistrations();
+      try {
+        const response = await getMyRegistrations();
 
-      setRegisteredEvents(
-        normalizeRegistrations(response, availableEvents)
-      );
-    } catch (error) {
-      setRegistrationsError(getErrorMessage(error));
-    } finally {
-      setLoadingRegistrations(false);
-    }
-  }, []);
+        setRegisteredEvents(
+          normalizeRegistrations(response, availableEvents)
+        );
+      } catch (error) {
+        setRegistrationsError(getErrorMessage(error));
+      } finally {
+        setLoadingRegistrations(false);
+      }
+    },
+    []
+  );
 
   useEffect(() => {
     let active = true;
@@ -539,7 +543,10 @@ export default function AttendeeRegistration({ user, onLogout }) {
           if (!active) return;
 
           setRegisteredEvents(
-            normalizeRegistrations(registrationsResponse, available)
+            normalizeRegistrations(
+              registrationsResponse,
+              available
+            )
           );
         } catch (error) {
           if (active) {
@@ -657,7 +664,11 @@ export default function AttendeeRegistration({ user, onLogout }) {
       next.event_id = "Please select an available event.";
     }
 
-    if (!CATEGORIES.some((category) => category.value === form.category)) {
+    if (
+      !CATEGORIES.some(
+        (category) => category.value === form.category
+      )
+    ) {
       next.category = "Please select an attendee category.";
     }
 
@@ -666,7 +677,10 @@ export default function AttendeeRegistration({ user, onLogout }) {
     return Object.keys(next).length === 0;
   }
 
-  async function openTicketWithDetails(ticket, registration = null) {
+  async function openTicketWithDetails(
+    ticket,
+    registration = null
+  ) {
     if (!ticket?.ticket_id) {
       setTicketMessage(
         "A digital ticket is not available for this registration yet. Refresh your registrations and try again."
@@ -692,8 +706,6 @@ export default function AttendeeRegistration({ user, onLogout }) {
         ticket.category || registration?.category || "General",
     };
 
-    // Open immediately so the attendee can see the ticket details
-    // while the full ticket is being retrieved.
     setSelectedTicket(fallbackTicket);
 
     try {
@@ -735,7 +747,6 @@ export default function AttendeeRegistration({ user, onLogout }) {
         }
       }
     } catch (error) {
-      // The registration may already contain the QR image.
       if (!isValidImageData(fallbackTicket.qr_code)) {
         setTicketMessage(
           `Unable to retrieve the full ticket: ${getErrorMessage(error)}`
@@ -770,14 +781,17 @@ export default function AttendeeRegistration({ user, onLogout }) {
 
       if (response?.success === false) {
         throw new Error(
-          response.message || "Registration could not be completed."
+          response.message ||
+            "Registration could not be completed."
         );
       }
 
-      const generatedTicket = normalizeTicketResponse(response);
+      const generatedTicket =
+        normalizeTicketResponse(response);
 
       setSuccess(
-        response?.message || "Registration completed successfully!"
+        response?.message ||
+          "Registration completed successfully!"
       );
 
       if (response?.ticket_created === false) {
@@ -789,7 +803,8 @@ export default function AttendeeRegistration({ user, onLogout }) {
         await openTicketWithDetails({
           ...generatedTicket,
           attendee_name:
-            generatedTicket.attendee_name || form.name.trim(),
+            generatedTicket.attendee_name ||
+            form.name.trim(),
           event_name:
             generatedTicket.event_name ||
             selectedEvent?.name ||
@@ -814,15 +829,21 @@ export default function AttendeeRegistration({ user, onLogout }) {
       const latestEvents = await loadEvents();
 
       try {
-        const latestRegistrations = await getMyRegistrations();
+        const latestRegistrations =
+          await getMyRegistrations();
 
         setRegisteredEvents(
-          normalizeRegistrations(latestRegistrations, latestEvents)
+          normalizeRegistrations(
+            latestRegistrations,
+            latestEvents
+          )
         );
 
         setRegistrationsError("");
       } catch (refreshError) {
-        setRegistrationsError(getErrorMessage(refreshError));
+        setRegistrationsError(
+          getErrorMessage(refreshError)
+        );
       }
 
       setForm((current) => ({
@@ -841,10 +862,59 @@ export default function AttendeeRegistration({ user, onLogout }) {
 
   async function handleRefresh() {
     setRegistrationsError("");
+    setCancellationMessage("");
+    setCancellationError("");
 
     const latestEvents = await loadEvents();
 
     await loadMyRegistrations(latestEvents);
+  }
+
+  async function handleCancelRegistration(registration) {
+    if (!registration?.id) {
+      setCancellationError(
+        "Unable to identify this registration."
+      );
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Are you sure you want to cancel your registration for "${registration.name}"? Your digital ticket will no longer be valid.`
+    );
+
+    if (!confirmed) return;
+
+    setCancelingRegistrationId(registration.id);
+    setCancellationMessage("");
+    setCancellationError("");
+    setTicketMessage("");
+
+    try {
+      await unregisterAttendee(registration.id);
+
+      setRegisteredEvents((current) =>
+        current.filter(
+          (item) => item.id !== registration.id
+        )
+      );
+
+      setCancellationMessage(
+        `Your registration for "${registration.name}" has been cancelled.`
+      );
+
+      // Refresh from the backend to ensure the UI reflects
+      // the latest registration status.
+      const latestEvents = await loadEvents();
+
+      await loadMyRegistrations(latestEvents);
+    } catch (error) {
+      setCancellationError(
+        getErrorMessage(error) ||
+          "Unable to cancel this registration. Please try again."
+      );
+    } finally {
+      setCancelingRegistrationId(null);
+    }
   }
 
   async function openRegistrationTicket(registration) {
@@ -866,8 +936,10 @@ export default function AttendeeRegistration({ user, onLogout }) {
         category: registration.category,
         status: registration.ticket.status ?? "Valid",
         qr_code: registration.ticket.qr_code ?? "",
-        created_at: registration.ticket.created_at ?? "",
-        checked_in_at: registration.ticket.checked_in_at ?? "",
+        created_at:
+          registration.ticket.created_at ?? "",
+        checked_in_at:
+          registration.ticket.checked_in_at ?? "",
       },
       registration
     );
@@ -881,10 +953,16 @@ export default function AttendeeRegistration({ user, onLogout }) {
         throw new Error("Clipboard unavailable");
       }
 
-      await navigator.clipboard.writeText(selectedTicket.ticket_id);
+      await navigator.clipboard.writeText(
+        selectedTicket.ticket_id
+      );
+
       setCopiedTicketId(true);
 
-      window.setTimeout(() => setCopiedTicketId(false), 1800);
+      window.setTimeout(
+        () => setCopiedTicketId(false),
+        1800
+      );
     } catch {
       setTicketMessage(
         "Could not copy the ticket ID. Please select and copy it manually."
@@ -903,7 +981,9 @@ export default function AttendeeRegistration({ user, onLogout }) {
     const link = document.createElement("a");
 
     link.href = selectedTicket.qr_code;
-    link.download = `${selectedTicket.ticket_id || "EventSphere-ticket"}-QR.png`;
+    link.download = `${
+      selectedTicket.ticket_id || "EventSphere-ticket"
+    }-QR.png`;
 
     document.body.appendChild(link);
     link.click();
@@ -924,11 +1004,17 @@ export default function AttendeeRegistration({ user, onLogout }) {
           href="/"
           aria-label="EventSphere home"
         >
-          <CalendarDays className="es-brand-icon" size={29} />
+          <CalendarDays
+            className="es-brand-icon"
+            size={29}
+          />
           <span>EventSphere</span>
         </a>
 
-        <nav className="es-header-nav" aria-label="Main navigation">
+        <nav
+          className="es-header-nav"
+          aria-label="Main navigation"
+        >
           <span>Plan</span>
           <i>•</i>
           <span>Manage</span>
@@ -938,7 +1024,9 @@ export default function AttendeeRegistration({ user, onLogout }) {
 
         <div className="es-user-actions">
           {user?.name && (
-            <span className="es-user-name">Hi, {user.name}</span>
+            <span className="es-user-name">
+              Hi, {user.name}
+            </span>
           )}
 
           {typeof onLogout === "function" && (
@@ -956,27 +1044,40 @@ export default function AttendeeRegistration({ user, onLogout }) {
       <main className="es-layout">
         <section className="es-form-card">
           <div className="es-form-heading">
-            <Users className="es-heading-icon" size={40} />
+            <Users
+              className="es-heading-icon"
+              size={40}
+            />
 
             <div>
-              <span className="es-eyebrow">YOUR NEXT EXPERIENCE</span>
+              <span className="es-eyebrow">
+                YOUR NEXT EXPERIENCE
+              </span>
+
               <h1>Event Registration</h1>
+
               <p>
-                A great experience starts here. Fill in your details
-                to reserve your place.
+                A great experience starts here. Fill in your
+                details to reserve your place.
               </p>
             </div>
           </div>
 
           {errors.form && (
-            <div className="es-alert es-alert-error" role="alert">
+            <div
+              className="es-alert es-alert-error"
+              role="alert"
+            >
               <AlertCircle size={20} />
               <span>{errors.form}</span>
             </div>
           )}
 
           {success && (
-            <div className="es-alert es-alert-success" role="status">
+            <div
+              className="es-alert es-alert-success"
+              role="status"
+            >
               <CheckCircle2 size={21} />
 
               <div>
@@ -987,7 +1088,9 @@ export default function AttendeeRegistration({ user, onLogout }) {
                   <button
                     type="button"
                     className="es-inline-ticket-button"
-                    onClick={() => setSelectedTicket(selectedTicket)}
+                    onClick={() =>
+                      setSelectedTicket(selectedTicket)
+                    }
                   >
                     <Ticket size={15} />
                     View your digital ticket
@@ -999,7 +1102,10 @@ export default function AttendeeRegistration({ user, onLogout }) {
           )}
 
           {ticketMessage && !selectedTicket && (
-            <div className="es-alert es-alert-error" role="status">
+            <div
+              className="es-alert es-alert-error"
+              role="status"
+            >
               <Info size={19} />
               <span>{ticketMessage}</span>
             </div>
@@ -1029,18 +1135,27 @@ export default function AttendeeRegistration({ user, onLogout }) {
                   maxLength={150}
                   aria-invalid={Boolean(errors.name)}
                   aria-describedby={
-                    errors.name ? "attendee-name-error" : undefined
+                    errors.name
+                      ? "attendee-name-error"
+                      : undefined
                   }
                   required
                 />
 
-                {form.name.trim().length >= 2 && !errors.name && (
-                  <Check className="es-valid-icon" size={19} />
-                )}
+                {form.name.trim().length >= 2 &&
+                  !errors.name && (
+                    <Check
+                      className="es-valid-icon"
+                      size={19}
+                    />
+                  )}
               </div>
 
               {errors.name && (
-                <small id="attendee-name-error" className="es-error-text">
+                <small
+                  id="attendee-name-error"
+                  className="es-error-text"
+                >
                   {errors.name}
                 </small>
               )}
@@ -1069,7 +1184,9 @@ export default function AttendeeRegistration({ user, onLogout }) {
                   maxLength={254}
                   aria-invalid={Boolean(errors.email)}
                   aria-describedby={
-                    errors.email ? "attendee-email-error" : undefined
+                    errors.email
+                      ? "attendee-email-error"
+                      : undefined
                   }
                   required
                 />
@@ -1078,12 +1195,18 @@ export default function AttendeeRegistration({ user, onLogout }) {
                   form.email.trim()
                 ) &&
                   !errors.email && (
-                    <Check className="es-valid-icon" size={19} />
+                    <Check
+                      className="es-valid-icon"
+                      size={19}
+                    />
                   )}
               </div>
 
               {errors.email && (
-                <small id="attendee-email-error" className="es-error-text">
+                <small
+                  id="attendee-email-error"
+                  className="es-error-text"
+                >
                   {errors.email}
                 </small>
               )}
@@ -1112,19 +1235,27 @@ export default function AttendeeRegistration({ user, onLogout }) {
                   maxLength={20}
                   aria-invalid={Boolean(errors.phone)}
                   aria-describedby={
-                    errors.phone ? "attendee-phone-error" : undefined
+                    errors.phone
+                      ? "attendee-phone-error"
+                      : undefined
                   }
                   required
                 />
 
                 {form.phone.replace(/\D/g, "").length >= 7 &&
                   !errors.phone && (
-                    <Check className="es-valid-icon" size={19} />
+                    <Check
+                      className="es-valid-icon"
+                      size={19}
+                    />
                   )}
               </div>
 
               {errors.phone && (
-                <small id="attendee-phone-error" className="es-error-text">
+                <small
+                  id="attendee-phone-error"
+                  className="es-error-text"
+                >
                   {errors.phone}
                 </small>
               )}
@@ -1147,19 +1278,28 @@ export default function AttendeeRegistration({ user, onLogout }) {
                   name="event_id"
                   value={form.event_id}
                   onChange={handleChange}
-                  disabled={loadingEvents || events.length === 0}
+                  disabled={
+                    loadingEvents || events.length === 0
+                  }
                   aria-invalid={Boolean(errors.event_id)}
                   aria-describedby={
-                    errors.event_id ? "attendee-event-error" : undefined
+                    errors.event_id
+                      ? "attendee-event-error"
+                      : undefined
                   }
                   required
                 >
                   <option value="">
-                    {loadingEvents ? "Loading events..." : "Choose an event"}
+                    {loadingEvents
+                      ? "Loading events..."
+                      : "Choose an event"}
                   </option>
 
                   {events.map((event) => (
-                    <option key={event.id} value={event.id}>
+                    <option
+                      key={event.id}
+                      value={event.id}
+                    >
                       {event.name}
                     </option>
                   ))}
@@ -1167,7 +1307,10 @@ export default function AttendeeRegistration({ user, onLogout }) {
               </div>
 
               {errors.event_id && (
-                <small id="attendee-event-error" className="es-error-text">
+                <small
+                  id="attendee-event-error"
+                  className="es-error-text"
+                >
                   {errors.event_id}
                 </small>
               )}
@@ -1181,7 +1324,9 @@ export default function AttendeeRegistration({ user, onLogout }) {
                     onClick={loadEvents}
                     disabled={loadingEvents}
                   >
-                    {loadingEvents ? "Loading..." : "Retry"}
+                    {loadingEvents
+                      ? "Loading..."
+                      : "Retry"}
                   </button>
                 </div>
               )}
@@ -1195,7 +1340,8 @@ export default function AttendeeRegistration({ user, onLogout }) {
 
                   <span>
                     <MapPin size={15} />
-                    {selectedEvent.venue || "Venue to be announced"}
+                    {selectedEvent.venue ||
+                      "Venue to be announced"}
                   </span>
                 </div>
               )}
@@ -1208,18 +1354,25 @@ export default function AttendeeRegistration({ user, onLogout }) {
 
               <div className="es-category-options">
                 {CATEGORIES.map((category) => (
-                  <label className="es-category-option" key={category.value}>
+                  <label
+                    className="es-category-option"
+                    key={category.value}
+                  >
                     <input
                       type="radio"
                       name="category"
                       value={category.value}
-                      checked={form.category === category.value}
+                      checked={
+                        form.category === category.value
+                      }
                       onChange={handleChange}
                     />
 
                     <span
                       className="es-radio-custom"
-                      style={{ "--category-color": category.color }}
+                      style={{
+                        "--category-color": category.color,
+                      }}
                     />
 
                     <span>{category.value}</span>
@@ -1228,7 +1381,9 @@ export default function AttendeeRegistration({ user, onLogout }) {
               </div>
 
               {errors.category && (
-                <small className="es-error-text">{errors.category}</small>
+                <small className="es-error-text">
+                  {errors.category}
+                </small>
               )}
             </fieldset>
 
@@ -1236,19 +1391,27 @@ export default function AttendeeRegistration({ user, onLogout }) {
               className="es-register-button"
               type="submit"
               disabled={
-                submitting || loadingEvents || events.length === 0
+                submitting ||
+                loadingEvents ||
+                events.length === 0
               }
             >
               {submitting ? (
                 <>
-                  <LoaderCircle className="es-spin" size={20} />
+                  <LoaderCircle
+                    className="es-spin"
+                    size={20}
+                  />
                   Registering...
                 </>
               ) : (
                 <>
                   <UserPlus size={20} />
                   Complete Registration
-                  <ArrowUpRight size={17} className="es-button-arrow" />
+                  <ArrowUpRight
+                    size={17}
+                    className="es-button-arrow"
+                  />
                 </>
               )}
             </button>
@@ -1256,8 +1419,8 @@ export default function AttendeeRegistration({ user, onLogout }) {
             <div className="es-form-notice">
               <Info size={18} />
               <span>
-                Please check your details before submitting your
-                registration.
+                Please check your details before submitting
+                your registration.
               </span>
             </div>
           </form>
@@ -1266,23 +1429,33 @@ export default function AttendeeRegistration({ user, onLogout }) {
         <aside className="es-event-card">
           <div className="es-sidebar-heading">
             <div>
-              <span className="es-eyebrow">YOUR EVENT SPACE</span>
+              <span className="es-eyebrow">
+                YOUR EVENT SPACE
+              </span>
+
               <h2>Your Registered Events</h2>
-              <p>All your event bookings, in one place.</p>
+
+              <p>
+                All your event bookings, in one place.
+              </p>
             </div>
 
             <button
               type="button"
               className="es-refresh-button"
               onClick={handleRefresh}
-              disabled={loadingRegistrations || loadingEvents}
+              disabled={
+                loadingRegistrations || loadingEvents
+              }
               aria-label="Refresh registered events"
               title="Refresh registered events"
             >
               <RefreshCw
                 size={17}
                 className={
-                  loadingRegistrations || loadingEvents ? "es-spin" : ""
+                  loadingRegistrations || loadingEvents
+                    ? "es-spin"
+                    : ""
                 }
               />
             </button>
@@ -1295,6 +1468,7 @@ export default function AttendeeRegistration({ user, onLogout }) {
 
             <div>
               <strong>{registeredEvents.length}</strong>
+
               <span>
                 {registeredEvents.length === 1
                   ? "event registered"
@@ -1302,12 +1476,37 @@ export default function AttendeeRegistration({ user, onLogout }) {
               </span>
             </div>
 
-            <span className="es-summary-caption">YOUR BOOKINGS</span>
+            <span className="es-summary-caption">
+              YOUR BOOKINGS
+            </span>
           </div>
+
+          {cancellationMessage && (
+            <div
+              className="es-alert es-alert-success"
+              role="status"
+            >
+              <CheckCircle2 size={19} />
+              <span>{cancellationMessage}</span>
+            </div>
+          )}
+
+          {cancellationError && (
+            <div
+              className="es-alert es-alert-error"
+              role="alert"
+            >
+              <AlertCircle size={19} />
+              <span>{cancellationError}</span>
+            </div>
+          )}
 
           {loadingRegistrations ? (
             <div className="es-registration-state">
-              <LoaderCircle size={22} className="es-spin" />
+              <LoaderCircle
+                size={22}
+                className="es-spin"
+              />
               <span>Loading registrations...</span>
             </div>
           ) : registrationsError ? (
@@ -1315,7 +1514,10 @@ export default function AttendeeRegistration({ user, onLogout }) {
               <AlertCircle size={22} />
               <p>{registrationsError}</p>
 
-              <button type="button" onClick={handleRefresh}>
+              <button
+                type="button"
+                onClick={handleRefresh}
+              >
                 Try again
               </button>
             </div>
@@ -1323,85 +1525,137 @@ export default function AttendeeRegistration({ user, onLogout }) {
             <div className="es-registration-state es-empty-registrations">
               <Ticket size={28} />
               <strong>No bookings yet</strong>
-              <p>Register for an event and it will appear here.</p>
+              <p>
+                Register for an event and it will appear here.
+              </p>
             </div>
           ) : (
             <div className="es-registered-events">
-              {registeredEvents.map((registration) => (
-                <article
-                  className="es-registered-event"
-                  key={registration.id}
-                >
-                  <div className="es-registered-event-top">
-                    <span className="es-registered-event-icon">
-                      <CalendarDays size={17} />
-                    </span>
+              {registeredEvents.map((registration) => {
+                const isCancelling =
+                  cancelingRegistrationId === registration.id;
 
-                    <span
-                      className={`es-registration-status ${
-                        ["registered", "confirmed"].includes(
-                          registration.status
-                        )
-                          ? "is-confirmed"
-                          : ""
-                      }`}
-                    >
-                      <CheckCircle2 size={13} />
-                      {getStatusLabel(registration.status)}
-                    </span>
-                  </div>
+                return (
+                  <article
+                    className="es-registered-event"
+                    key={registration.id}
+                  >
+                    <div className="es-registered-event-top">
+                      <span className="es-registered-event-icon">
+                        <CalendarDays size={17} />
+                      </span>
 
-                  <h3>{registration.name}</h3>
-
-                  <div className="es-compact-detail">
-                    <CalendarDays size={15} />
-                    <span>{formatDate(registration.date)}</span>
-                  </div>
-
-                  <div className="es-compact-detail">
-                    <MapPin size={15} />
-                    <span>
-                      {registration.venue || "Venue to be announced"}
-                    </span>
-                  </div>
-
-                  <div className="es-registered-event-bottom">
-                    <span className="es-category-pill">
-                      <Tag size={13} />
-                      {registration.category}
-                    </span>
-                  </div>
-
-                  {registration.ticket?.ticket_id ? (
-                    <div className="es-ticket-preview">
-                      <div className="es-ticket-preview-info">
-                        <Ticket size={16} />
-
-                        <div>
-                          <strong>Digital ticket ready</strong>
-                          <span>{registration.ticket.ticket_id}</span>
-                        </div>
-                      </div>
-
-                      <button
-                        type="button"
-                        className="es-view-ticket-button"
-                        onClick={() =>
-                          openRegistrationTicket(registration)
-                        }
+                      <span
+                        className={`es-registration-status ${
+                          [
+                            "registered",
+                            "confirmed",
+                          ].includes(registration.status)
+                            ? "is-confirmed"
+                            : ""
+                        }`}
                       >
-                        <QrCode size={16} />
-                        View ticket
-                      </button>
+                        <CheckCircle2 size={13} />
+                        {getStatusLabel(
+                          registration.status
+                        )}
+                      </span>
                     </div>
-                  ) : (
-                    <div className="es-ticket-pending">
-                      <Info size={15} />
-                      <span>Digital ticket not available yet</span>
+
+                    <h3>{registration.name}</h3>
+
+                    <div className="es-compact-detail">
+                      <CalendarDays size={15} />
+                      <span>
+                        {formatDate(registration.date)}
+                      </span>
                     </div>
-                  )}
-                </article>
-              ))}
+
+                    <div className="es-compact-detail">
+                      <MapPin size={15} />
+                      <span>
+                        {registration.venue ||
+                          "Venue to be announced"}
+                      </span>
+                    </div>
+
+                    <div className="es-registered-event-bottom">
+                      <span className="es-category-pill">
+                        <Tag size={13} />
+                        {registration.category}
+                      </span>
+                    </div>
+
+                    {registration.ticket?.ticket_id ? (
+                      <div className="es-ticket-preview">
+                        <div className="es-ticket-preview-info">
+                          <Ticket size={16} />
+
+                          <div>
+                            <strong>
+                              Digital ticket ready
+                            </strong>
+
+                            <span>
+                              {registration.ticket.ticket_id}
+                            </span>
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          className="es-view-ticket-button"
+                          onClick={() =>
+                            openRegistrationTicket(
+                              registration
+                            )
+                          }
+                          disabled={isCancelling}
+                        >
+                          <QrCode size={16} />
+                          View ticket
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="es-ticket-pending">
+                        <Info size={15} />
+                        <span>
+                          Digital ticket not available yet
+                        </span>
+                      </div>
+                    )}
+
+                    <button
+                      type="button"
+                      className="es-cancel-registration-button"
+                      onClick={() =>
+                        handleCancelRegistration(
+                          registration
+                        )
+                      }
+                      disabled={
+                        isCancelling ||
+                        cancelingRegistrationId !== null
+                      }
+                    >
+                      {isCancelling ? (
+                        <>
+                          <LoaderCircle
+                            size={16}
+                            className="es-spin"
+                          />
+                          Cancelling...
+                        </>
+                      ) : (
+                        <>
+                          <Trash2 size={16} />
+                          Cancel Registration
+                        </>
+                      )}
+                    </button>
+                  </article>
+                );
+              })}
             </div>
           )}
 
@@ -1412,7 +1666,8 @@ export default function AttendeeRegistration({ user, onLogout }) {
       </main>
 
       <footer className="es-footer">
-        EventSphere <span>·</span> Every event starts with a connection.
+        EventSphere <span>·</span> Every event starts with a
+        connection.
       </footer>
 
       {selectedTicket && (
@@ -1437,7 +1692,9 @@ export default function AttendeeRegistration({ user, onLogout }) {
                   EVENTSPHERE DIGITAL PASS
                 </span>
 
-                <h2 id="es-ticket-title">Your Event Ticket</h2>
+                <h2 id="es-ticket-title">
+                  Your Event Ticket
+                </h2>
               </div>
 
               <button
@@ -1456,53 +1713,83 @@ export default function AttendeeRegistration({ user, onLogout }) {
 
               <span
                 className={`es-ticket-status ${
-                  String(selectedTicket.status).toLowerCase() === "valid"
+                  String(
+                    selectedTicket.status
+                  ).toLowerCase() === "valid"
                     ? "is-valid"
                     : "is-not-valid"
                 }`}
               >
                 <ShieldCheck size={14} />
-                {getStatusLabel(selectedTicket.status)}
+                {getStatusLabel(
+                  selectedTicket.status
+                )}
               </span>
             </div>
 
             <div className="es-ticket-event-details">
-              <span className="es-eyebrow">YOU ARE REGISTERED FOR</span>
+              <span className="es-eyebrow">
+                YOU ARE REGISTERED FOR
+              </span>
+
               <h3>{selectedTicket.event_name}</h3>
 
               <div className="es-ticket-detail-row">
                 <CalendarDays size={17} />
-                <span>{formatDate(selectedTicket.event_date)}</span>
+                <span>
+                  {formatDate(
+                    selectedTicket.event_date
+                  )}
+                </span>
               </div>
 
               <div className="es-ticket-detail-row">
                 <MapPin size={17} />
                 <span>
-                  {selectedTicket.venue || "Venue to be announced"}
+                  {selectedTicket.venue ||
+                    "Venue to be announced"}
                 </span>
               </div>
 
               <div className="es-ticket-detail-row">
                 <UserRound size={17} />
                 <span>
-                  {selectedTicket.attendee_name || user?.name || "Attendee"}
+                  {selectedTicket.attendee_name ||
+                    user?.name ||
+                    "Attendee"}
                 </span>
               </div>
 
               <div className="es-ticket-detail-row">
                 <Tag size={17} />
-                <span>{selectedTicket.category || "General"} category</span>
+                <span>
+                  {selectedTicket.category || "General"}{" "}
+                  category
+                </span>
               </div>
             </div>
 
             <div className="es-ticket-qr-section">
-              {loadingTicket && !selectedTicket.qr_code ? (
+              {loadingTicket &&
+              !selectedTicket.qr_code ? (
                 <div className="es-ticket-qr-missing">
-                  <LoaderCircle size={38} className="es-spin" />
-                  <strong>Loading ticket QR code...</strong>
-                  <p>Please wait while we retrieve your ticket.</p>
+                  <LoaderCircle
+                    size={38}
+                    className="es-spin"
+                  />
+
+                  <strong>
+                    Loading ticket QR code...
+                  </strong>
+
+                  <p>
+                    Please wait while we retrieve your
+                    ticket.
+                  </p>
                 </div>
-              ) : isValidImageData(selectedTicket.qr_code) ? (
+              ) : isValidImageData(
+                  selectedTicket.qr_code
+                ) ? (
                 <img
                   className="es-ticket-qr"
                   src={selectedTicket.qr_code}
@@ -1511,23 +1798,30 @@ export default function AttendeeRegistration({ user, onLogout }) {
               ) : (
                 <div className="es-ticket-qr-missing">
                   <QrCode size={38} />
+
                   <strong>QR code unavailable</strong>
+
                   <p>
-                    The server did not return a QR image for this ticket.
-                    Refresh your registrations or contact the event organizer.
+                    The server did not return a QR image
+                    for this ticket. Refresh your
+                    registrations or contact the event
+                    organizer.
                   </p>
                 </div>
               )}
 
               <p>
-                Present this QR code to the event organizer for verification.
+                Present this QR code to the event organizer
+                for verification.
               </p>
             </div>
 
             <div className="es-ticket-id-box">
               <div>
                 <span>TICKET ID</span>
-                <strong>{selectedTicket.ticket_id}</strong>
+                <strong>
+                  {selectedTicket.ticket_id}
+                </strong>
               </div>
 
               <button
@@ -1557,7 +1851,10 @@ export default function AttendeeRegistration({ user, onLogout }) {
             )}
 
             {ticketMessage && (
-              <div className="es-alert es-alert-error" role="status">
+              <div
+                className="es-alert es-alert-error"
+                role="status"
+              >
                 <Info size={18} />
                 <span>{ticketMessage}</span>
               </div>
@@ -1568,7 +1865,11 @@ export default function AttendeeRegistration({ user, onLogout }) {
                 type="button"
                 className="es-ticket-download-button"
                 onClick={downloadTicketQr}
-                disabled={!isValidImageData(selectedTicket.qr_code)}
+                disabled={
+                  !isValidImageData(
+                    selectedTicket.qr_code
+                  )
+                }
               >
                 <Download size={17} />
                 Download QR code
@@ -1584,8 +1885,9 @@ export default function AttendeeRegistration({ user, onLogout }) {
             </div>
 
             <p className="es-ticket-disclaimer">
-              Keep your ticket ID and QR code safe. Ticket validity is
-              determined by the EventSphere server.
+              Keep your ticket ID and QR code safe. Ticket
+              validity is determined by the EventSphere
+              server.
             </p>
           </section>
         </div>

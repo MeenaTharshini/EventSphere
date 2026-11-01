@@ -19,6 +19,46 @@ function getAuthToken() {
     sessionStorage.getItem("token")
   );
 }
+// =========================================================
+// VENDOR ASSIGNED EVENTS
+// GET /api/vendors/profile/me/events
+// =========================================================
+
+
+/**
+ * GET /api/vendors/events/assigned
+ *
+ * Returns events assigned to the currently logged-in vendor.
+ * The backend response is:
+ * {
+ *   success: true,
+ *   events: [...],
+ *   count: number
+ * }
+ */
+export async function getMyAssignedEvents() {
+  const response = await apiRequest(
+    "/vendors/events/assigned",
+    {
+      method: "GET",
+    }
+  );
+
+  if (Array.isArray(response)) {
+    return response;
+  }
+
+  if (Array.isArray(response?.events)) {
+    return response.events;
+  }
+
+  if (Array.isArray(response?.assigned_events)) {
+    return response.assigned_events;
+  }
+
+  return [];
+}
+
 
 function getErrorMessage(data, status) {
   if (typeof data?.detail === "string") {
@@ -415,6 +455,128 @@ export function unregisterAttendee(registrationId) {
     )}`,
     {
       method: "DELETE",
+    }
+  );
+}
+// =========================================================
+// VENDOR MANAGEMENT
+// =========================================================
+
+// POST /api/vendors/profile
+export function createVendorProfile(vendor) {
+  return apiRequest("/vendors/profile", {
+    method: "POST",
+    body: JSON.stringify(vendor),
+  });
+}
+
+// GET /api/vendors/profile/me
+export function getMyVendorProfile() {
+  return apiRequest("/vendors/profile/me", {
+    method: "GET",
+  });
+}
+
+// PUT /api/vendors/profile/me
+export function updateMyVendorProfile(vendor) {
+  return apiRequest("/vendors/profile/me", {
+    method: "PUT",
+    body: JSON.stringify(vendor),
+  });
+}
+
+// GET /api/vendors/
+export function getApprovedVendors(params = {}) {
+  const query = new URLSearchParams();
+
+  if (params.category) query.set("category", params.category);
+  if (params.city) query.set("city", params.city);
+  if (params.search) query.set("search", params.search);
+
+  if (params.skip !== undefined) {
+    query.set("skip", String(params.skip));
+  }
+
+  if (params.limit !== undefined) {
+    query.set("limit", String(params.limit));
+  }
+
+  const queryString = query.toString();
+
+  return apiRequest(
+    `/vendors/${queryString ? `?${queryString}` : ""}`,
+    {
+      method: "GET",
+    }
+  );
+}
+
+// GET /api/vendors/{vendor_id}
+export function getVendorDetails(vendorId) {
+  return apiRequest(
+    `/vendors/${encodeURIComponent(vendorId)}`,
+    {
+      method: "GET",
+    }
+  );
+}
+// =========================================================
+// ADMIN VENDOR MANAGEMENT
+// =========================================================
+
+// GET /api/vendors/admin/applications
+// Retrieve vendor applications for administrator review.
+export function getVendors(params = {}) {
+  const query = new URLSearchParams();
+
+  if (params.status) {
+    query.set("status", params.status);
+  }
+
+  if (params.skip !== undefined) {
+    query.set("skip", String(params.skip));
+  }
+
+  if (params.limit !== undefined) {
+    query.set("limit", String(params.limit));
+  }
+
+  const queryString = query.toString();
+
+  return apiRequest(
+    `/vendors/admin/applications${
+      queryString ? `?${queryString}` : ""
+    }`,
+    {
+      method: "GET",
+    }
+  );
+}
+
+// PUT /api/vendors/admin/{vendor_id}/approval
+// Approve a vendor application.
+export function approveVendor(vendorId) {
+  return apiRequest(
+    `/vendors/admin/${encodeURIComponent(vendorId)}/approval`,
+    {
+      method: "PUT",
+      body: JSON.stringify({
+        status: "Approved",
+      }),
+    }
+  );
+}
+
+// PUT /api/vendors/admin/{vendor_id}/approval
+// Reject a vendor application.
+export function rejectVendor(vendorId) {
+  return apiRequest(
+    `/vendors/admin/${encodeURIComponent(vendorId)}/approval`,
+    {
+      method: "PUT",
+      body: JSON.stringify({
+        status: "Rejected",
+      }),
     }
   );
 }

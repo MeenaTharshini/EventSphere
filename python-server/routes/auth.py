@@ -14,7 +14,7 @@ from pymongo.errors import DuplicateKeyError
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 
 JWT_ALGORITHM = "HS256"
-JWT_EXPIRY_HOURS = 2
+JWT_EXPIRY_HOURS = 24
 
 # Enables the Authorize button in Swagger UI.
 bearer_scheme = HTTPBearer(auto_error=False)

@@ -1,14 +1,72 @@
 
+ // src/Sidebar.jsx
+
 import { useEffect, useRef, useState } from "react";
 import "./Sidebar.css";
 
-const navigationItems = [
+// =========================================================
+// ORGANIZER NAVIGATION
+// =========================================================
+
+const organizerNavigationItems = [
   { label: "Dashboard", icon: "◈", href: "#overview" },
   { label: "Events", icon: "▦", href: "#events" },
+  { label: "Attendance", icon: "✓", href: "#attendance" },
+  { label: "Vendors", icon: "♙", href: "#vendors" },
   { label: "Venues", icon: "⌖", href: "#venues" },
   { label: "Resources", icon: "◇", href: "#resources" },
   { label: "Scheduling", icon: "◷", href: "#scheduling" },
 ];
+
+// =========================================================
+// VENDOR NAVIGATION
+// =========================================================
+
+const vendorNavigationItems = [
+  { label: "Dashboard", icon: "◈", href: "#overview" },
+  { label: "My Profile", icon: "♙", href: "#profile" },
+  { label: "Services", icon: "◇", href: "#services" },
+];
+
+// =========================================================
+// ATTENDEE NAVIGATION
+// =========================================================
+
+const attendeeNavigationItems = [
+  { label: "Dashboard", icon: "◈", href: "#overview" },
+  { label: "My Tickets", icon: "▦", href: "#tickets" },
+  { label: "Events", icon: "◷", href: "#events" },
+];
+
+// =========================================================
+// ROLE HELPERS
+// =========================================================
+
+function getUserRole(user) {
+  return String(
+    user?.role || user?.user?.role || "Attendee"
+  )
+    .trim()
+    .toLowerCase();
+}
+
+function getNavigationItems(role) {
+  switch (role) {
+    case "vendor":
+      return vendorNavigationItems;
+
+    case "attendee":
+      return attendeeNavigationItems;
+
+    case "organizer":
+    default:
+      return organizerNavigationItems;
+  }
+}
+
+// =========================================================
+// SIDEBAR COMPONENT
+// =========================================================
 
 export default function Sidebar({
   user,
@@ -23,11 +81,26 @@ export default function Sidebar({
   const menuButtonRef = useRef(null);
   const sidebarRef = useRef(null);
 
-  const userName = user?.name || user?.full_name || "User";
-  const userRole = user?.role || user?.user?.role || "Attendee";
+  const userName =
+    user?.name ||
+    user?.full_name ||
+    user?.user?.name ||
+    "User";
+
+  const userRole =
+    user?.role ||
+    user?.user?.role ||
+    "Attendee";
+
   const initial = userName.charAt(0).toUpperCase();
 
-  // Detect mobile screen size.
+  const role = getUserRole(user);
+  const navigationItems = getNavigationItems(role);
+
+  // =======================================================
+  // RESPONSIVE SCREEN HANDLING
+  // =======================================================
+
   useEffect(() => {
     const mediaQuery = window.matchMedia("(max-width: 900px)");
 
@@ -37,6 +110,7 @@ export default function Sidebar({
     };
 
     updateScreen();
+
     mediaQuery.addEventListener("change", updateScreen);
 
     return () => {
@@ -44,7 +118,10 @@ export default function Sidebar({
     };
   }, []);
 
-  // Handle Escape and keyboard focus on the mobile menu.
+  // =======================================================
+  // MOBILE KEYBOARD HANDLING
+  // =======================================================
+
   useEffect(() => {
     if (!mobileOpen || !isMobile) return;
 
@@ -57,10 +134,9 @@ export default function Sidebar({
 
     window.addEventListener("keydown", handleEscape);
 
-    const firstLink =
-      sidebarRef.current?.querySelector(
-        ".es-sidebar-nav a, .es-brand"
-      );
+    const firstLink = sidebarRef.current?.querySelector(
+      ".es-sidebar-nav a, .es-brand"
+    );
 
     firstLink?.focus();
 
@@ -68,6 +144,10 @@ export default function Sidebar({
       window.removeEventListener("keydown", handleEscape);
     };
   }, [mobileOpen, isMobile]);
+
+  // =======================================================
+  // SIDEBAR TOGGLE
+  // =======================================================
 
   function toggleSidebar() {
     if (isMobile) {
@@ -82,6 +162,10 @@ export default function Sidebar({
     }
   }
 
+  // =======================================================
+  // CLOSE MOBILE SIDEBAR
+  // =======================================================
+
   function closeMobileSidebar() {
     if (isMobile && mobileOpen) {
       setMobileOpen(false);
@@ -89,7 +173,10 @@ export default function Sidebar({
     }
   }
 
-  // Dashboard and Events are separate pages.
+  // =======================================================
+  // NAVIGATION
+  // =======================================================
+
   function handleNavigation(event, item) {
     event.preventDefault();
 
@@ -112,10 +199,18 @@ export default function Sidebar({
     closeMobileSidebar();
   }
 
+  // =======================================================
+  // SIDEBAR CLASSES
+  // =======================================================
+
   const sidebarClass = [
     "es-sidebar",
-    collapsed && !isMobile ? "es-sidebar-collapsed" : "",
-    mobileOpen && isMobile ? "es-sidebar-mobile-open" : "",
+    collapsed && !isMobile
+      ? "es-sidebar-collapsed"
+      : "",
+    mobileOpen && isMobile
+      ? "es-sidebar-mobile-open"
+      : "",
   ]
     .filter(Boolean)
     .join(" ");
@@ -127,6 +222,10 @@ export default function Sidebar({
     : collapsed
       ? "Expand sidebar"
       : "Collapse sidebar";
+
+  // =======================================================
+  // RENDER
+  // =======================================================
 
   return (
     <>
@@ -165,6 +264,7 @@ export default function Sidebar({
         aria-hidden={isMobile && !mobileOpen}
         inert={isMobile && !mobileOpen}
       >
+        {/* Header */}
         <div className="es-sidebar-header">
           <a
             className="es-brand"
@@ -173,7 +273,10 @@ export default function Sidebar({
             title="EventSphere"
             tabIndex={isMobile && !mobileOpen ? -1 : 0}
           >
-            <span className="es-brand-icon" aria-hidden="true">
+            <span
+              className="es-brand-icon"
+              aria-hidden="true"
+            >
               <svg
                 viewBox="0 0 24 24"
                 fill="none"
@@ -182,12 +285,21 @@ export default function Sidebar({
                 strokeLinecap="round"
                 strokeLinejoin="round"
               >
-                <rect x="3" y="5" width="18" height="16" rx="2" />
+                <rect
+                  x="3"
+                  y="5"
+                  width="18"
+                  height="16"
+                  rx="2"
+                />
+
                 <path d="M16 3v4M8 3v4M3 10h18M9 15l2 2 4-4" />
               </svg>
             </span>
 
-            <span className="es-brand-name">EventSphere</span>
+            <span className="es-brand-name">
+              EventSphere
+            </span>
           </a>
 
           <button
@@ -208,9 +320,16 @@ export default function Sidebar({
           </button>
         </div>
 
-        <p className="es-sidebar-caption">WORKSPACE</p>
+        {/* Navigation caption */}
+        <p className="es-sidebar-caption">
+          WORKSPACE
+        </p>
 
-        <nav className="es-sidebar-nav" aria-label="Main navigation">
+        {/* Navigation */}
+        <nav
+          className="es-sidebar-nav"
+          aria-label="Main navigation"
+        >
           {navigationItems.map((item) => {
             const isActive = item.label === activePage;
 
@@ -222,12 +341,20 @@ export default function Sidebar({
                   title={`${item.label} feature coming later`}
                   aria-disabled="true"
                 >
-                  <span className="es-nav-icon" aria-hidden="true">
+                  <span
+                    className="es-nav-icon"
+                    aria-hidden="true"
+                  >
                     {item.icon}
                   </span>
 
-                  <span className="es-nav-label">{item.label}</span>
-                  <span className="es-nav-soon">Later</span>
+                  <span className="es-nav-label">
+                    {item.label}
+                  </span>
+
+                  <span className="es-nav-soon">
+                    Later
+                  </span>
                 </div>
               );
             }
@@ -240,15 +367,26 @@ export default function Sidebar({
                 }`}
                 href={item.href}
                 aria-current={isActive ? "page" : undefined}
-                onClick={(event) => handleNavigation(event, item)}
-                title={collapsed && !isMobile ? item.label : undefined}
+                onClick={(event) =>
+                  handleNavigation(event, item)
+                }
+                title={
+                  collapsed && !isMobile
+                    ? item.label
+                    : undefined
+                }
                 tabIndex={isMobile && !mobileOpen ? -1 : 0}
               >
-                <span className="es-nav-icon" aria-hidden="true">
+                <span
+                  className="es-nav-icon"
+                  aria-hidden="true"
+                >
                   {item.icon}
                 </span>
 
-                <span className="es-nav-label">{item.label}</span>
+                <span className="es-nav-label">
+                  {item.label}
+                </span>
               </a>
             );
           })}
@@ -260,7 +398,9 @@ export default function Sidebar({
             className="es-sidebar-user"
             title={`${userName} — ${userRole}`}
           >
-            <span className="es-user-avatar">{initial}</span>
+            <span className="es-user-avatar">
+              {initial}
+            </span>
 
             <span className="es-user-details">
               <strong>{userName}</strong>
@@ -272,13 +412,22 @@ export default function Sidebar({
             type="button"
             className="es-sidebar-logout"
             onClick={onLogout}
-            title={collapsed && !isMobile ? "Log out" : undefined}
+            title={
+              collapsed && !isMobile
+                ? "Log out"
+                : undefined
+            }
           >
-            <span className="es-logout-icon" aria-hidden="true">
+            <span
+              className="es-logout-icon"
+              aria-hidden="true"
+            >
               ↪
             </span>
 
-            <span className="es-logout-label">Log out</span>
+            <span className="es-logout-label">
+              Log out
+            </span>
           </button>
         </div>
       </aside>

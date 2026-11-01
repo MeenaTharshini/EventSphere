@@ -1,3 +1,4 @@
+// src/Dashboard.jsx
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -14,6 +15,7 @@ import {
   Plus,
   RefreshCw,
   Users,
+  Building2,
 } from "lucide-react";
 
 import {
@@ -27,16 +29,25 @@ import Events from "./Events";
 import Venues from "./Venues";
 import Resources from "./Resources";
 import Scheduling from "./Scheduling";
+import Attendance from "./Attendance";
+import OrganizerVendors from "./OrganizerVendors";
+
 import "./Dashboard.css";
 
 const EMPTY_ARRAY = [];
 
 function toArray(response, keys = []) {
   if (Array.isArray(response)) return response;
-  if (Array.isArray(response?.data)) return response.data;
+
+  if (Array.isArray(response?.data)) {
+    return response.data;
+  }
 
   for (const key of keys) {
-    if (Array.isArray(response?.[key])) return response[key];
+    if (Array.isArray(response?.[key])) {
+      return response[key];
+    }
+
     if (Array.isArray(response?.data?.[key])) {
       return response.data[key];
     }
@@ -54,7 +65,7 @@ function getEventDate(event) {
 
   if (!value) return null;
 
-  // Parse date-only values in local time to avoid timezone shifts.
+  // Parse date-only strings in local time to avoid timezone shifts.
   if (
     typeof value === "string" &&
     /^\d{4}-\d{2}-\d{2}$/.test(value)
@@ -66,13 +77,17 @@ function getEventDate(event) {
   }
 
   const date = new Date(value);
+
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
 function formatDate(value) {
   if (!value) return "Date not available";
 
-  const date = value instanceof Date ? value : getEventDate({ date: value });
+  const date =
+    value instanceof Date
+      ? value
+      : getEventDate({ date: value });
 
   if (!date || Number.isNaN(date.getTime())) {
     return String(value);
@@ -88,8 +103,10 @@ function formatDate(value) {
 function formatTime(value) {
   if (!value) return "Time not available";
 
-  // Support both HH:mm and ISO datetime strings.
-  if (typeof value === "string" && value.includes("T")) {
+  if (
+    typeof value === "string" &&
+    value.includes("T")
+  ) {
     const date = new Date(value);
 
     if (!Number.isNaN(date.getTime())) {
@@ -104,9 +121,17 @@ function formatTime(value) {
 
   if (!match) return String(value);
 
-  const date = new Date(2000, 0, 1, Number(match[1]), Number(match[2]));
+  const date = new Date(
+    2000,
+    0,
+    1,
+    Number(match[1]),
+    Number(match[2])
+  );
 
-  if (Number.isNaN(date.getTime())) return String(value);
+  if (Number.isNaN(date.getTime())) {
+    return String(value);
+  }
 
   return new Intl.DateTimeFormat(undefined, {
     hour: "numeric",
@@ -128,9 +153,14 @@ function getStatus(event) {
 
   if (value.includes("cancel")) return "Cancelled";
   if (value.includes("complete")) return "Completed";
-  if (value.includes("progress") || value.includes("ongoing")) {
+
+  if (
+    value.includes("progress") ||
+    value.includes("ongoing")
+  ) {
     return "In Progress";
   }
+
   if (value.includes("confirm")) return "Confirmed";
   if (value.includes("draft")) return "Draft";
 
@@ -146,7 +176,9 @@ function getVenueName(event, venues) {
     event?.venueId ??
     event?.venue?.id;
 
-  if (venueId == null) return "Venue not assigned";
+  if (venueId == null) {
+    return "Venue not assigned";
+  }
 
   const venue = venues.find(
     (item) =>
@@ -154,7 +186,11 @@ function getVenueName(event, venues) {
       String(venueId)
   );
 
-  return venue?.name ?? venue?.venue_name ?? "Venue not assigned";
+  return (
+    venue?.name ??
+    venue?.venue_name ??
+    "Venue not assigned"
+  );
 }
 
 function getUserName(user) {
@@ -176,7 +212,13 @@ function getGreeting() {
   return "Good evening";
 }
 
-function StatCard({ icon: Icon, label, value, helper, onClick }) {
+function StatCard({
+  icon: Icon,
+  label,
+  value,
+  helper,
+  onClick,
+}) {
   return (
     <button
       type="button"
@@ -187,11 +229,17 @@ function StatCard({ icon: Icon, label, value, helper, onClick }) {
         <Icon size={21} />
       </span>
 
-      <span className="dashboard-stat-label">{label}</span>
+      <span className="dashboard-stat-label">
+        {label}
+      </span>
 
-      <strong className="dashboard-stat-value">{value}</strong>
+      <strong className="dashboard-stat-value">
+        {value}
+      </strong>
 
-      <span className="dashboard-stat-helper">{helper}</span>
+      <span className="dashboard-stat-helper">
+        {helper}
+      </span>
     </button>
   );
 }
@@ -209,7 +257,9 @@ function StatusBadge({ status }) {
 }
 
 function MiniCalendar({ events, onSelectDate }) {
-  const [monthDate, setMonthDate] = useState(() => new Date());
+  const [monthDate, setMonthDate] = useState(
+    () => new Date()
+  );
 
   const year = monthDate.getFullYear();
   const month = monthDate.getMonth();
@@ -236,8 +286,14 @@ function MiniCalendar({ events, onSelectDate }) {
   }, [events, year, month]);
 
   const cells = [
-    ...Array.from({ length: firstWeekday }, () => null),
-    ...Array.from({ length: daysInMonth }, (_, index) => index + 1),
+    ...Array.from(
+      { length: firstWeekday },
+      () => null
+    ),
+    ...Array.from(
+      { length: daysInMonth },
+      (_, index) => index + 1
+    ),
   ];
 
   const today = new Date();
@@ -254,7 +310,11 @@ function MiniCalendar({ events, onSelectDate }) {
           <button
             type="button"
             aria-label="Previous month"
-            onClick={() => setMonthDate(new Date(year, month - 1, 1))}
+            onClick={() =>
+              setMonthDate(
+                new Date(year, month - 1, 1)
+              )
+            }
           >
             ‹
           </button>
@@ -262,7 +322,11 @@ function MiniCalendar({ events, onSelectDate }) {
           <button
             type="button"
             aria-label="Next month"
-            onClick={() => setMonthDate(new Date(year, month + 1, 1))}
+            onClick={() =>
+              setMonthDate(
+                new Date(year, month + 1, 1)
+              )
+            }
           >
             ›
           </button>
@@ -301,23 +365,34 @@ function MiniCalendar({ events, onSelectDate }) {
               disabled={!day}
               aria-label={
                 day
-                  ? `${formatDate(new Date(year, month, day))}${
-                      eventDays.has(day) ? ", has events" : ""
+                  ? `${formatDate(
+                      new Date(year, month, day)
+                    )}${
+                      eventDays.has(day)
+                        ? ", has events"
+                        : ""
                     }`
                   : undefined
               }
               className={[
                 "dashboard-calendar-day",
                 isToday ? "today" : "",
-                day && eventDays.has(day) ? "has-event" : "",
-              ].join(" ")}
+                day && eventDays.has(day)
+                  ? "has-event"
+                  : "",
+              ]
+                .filter(Boolean)
+                .join(" ")}
               onClick={() => {
                 if (day) {
-                  onSelectDate?.(new Date(year, month, day));
+                  onSelectDate?.(
+                    new Date(year, month, day)
+                  );
                 }
               }}
             >
               {day || ""}
+
               {day && eventDays.has(day) && (
                 <span className="dashboard-calendar-dot" />
               )}
@@ -338,14 +413,16 @@ function DashboardOverview({
   onRefresh,
   onNavigate,
 }) {
-  const todayStart = new Date();
-  todayStart.setHours(0, 0, 0, 0);
-
   const upcomingEvents = useMemo(() => {
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+
     return events
       .filter((event) => {
         const date = getEventDate(event);
-        const status = String(getStatus(event)).toLowerCase();
+        const status = String(
+          getStatus(event)
+        ).toLowerCase();
 
         return (
           date &&
@@ -354,7 +431,10 @@ function DashboardOverview({
           !status.includes("complete")
         );
       })
-      .sort((a, b) => getEventDate(a) - getEventDate(b));
+      .sort(
+        (a, b) =>
+          getEventDate(a) - getEventDate(b)
+      );
   }, [events]);
 
   const attendeeCount = useMemo(() => {
@@ -367,7 +447,10 @@ function DashboardOverview({
 
       const number = Number(count);
 
-      return total + (Number.isFinite(number) ? number : 0);
+      return (
+        total +
+        (Number.isFinite(number) ? number : 0)
+      );
     }, 0);
   }, [events]);
 
@@ -383,12 +466,15 @@ function DashboardOverview({
 
           <h2>
             {getGreeting()}
-            {getUserName(user) ? `, ${getUserName(user)}` : ""}!
+            {getUserName(user)
+              ? `, ${getUserName(user)}`
+              : ""}
+            !
           </h2>
 
           <p>
-            Manage your events, venues, and scheduling
-            from one workspace.
+            Manage your events, venues, attendance, and
+            scheduling from one workspace.
           </p>
         </div>
 
@@ -407,7 +493,10 @@ function DashboardOverview({
           <AlertCircle size={18} />
           <span>{error}</span>
 
-          <button type="button" onClick={onRefresh}>
+          <button
+            type="button"
+            onClick={onRefresh}
+          >
             Retry
           </button>
         </div>
@@ -416,7 +505,9 @@ function DashboardOverview({
       <div className="dashboard-section-heading">
         <div>
           <h2>Overview</h2>
-          <p>Statistics calculated from your API data.</p>
+          <p>
+            Statistics calculated from your API data.
+          </p>
         </div>
 
         <button
@@ -427,7 +518,9 @@ function DashboardOverview({
         >
           <RefreshCw
             size={16}
-            className={loading ? "dashboard-spinning" : ""}
+            className={
+              loading ? "dashboard-spinning" : ""
+            }
           />
           Refresh
         </button>
@@ -453,7 +546,9 @@ function DashboardOverview({
         <StatCard
           icon={CalendarPlus}
           label="Upcoming events"
-          value={loading ? "…" : upcomingEvents.length}
+          value={
+            loading ? "…" : upcomingEvents.length
+          }
           helper="Future non-cancelled events"
           onClick={() => onNavigate("Scheduling")}
         />
@@ -463,7 +558,7 @@ function DashboardOverview({
           label="Attendees"
           value={loading ? "…" : attendeeCount}
           helper="Based on attendee fields in event data"
-          onClick={() => onNavigate("Events")}
+          onClick={() => onNavigate("Attendance")}
         />
       </section>
 
@@ -485,11 +580,15 @@ function DashboardOverview({
           </div>
 
           {loading ? (
-            <p className="dashboard-empty-state">Loading events…</p>
+            <p className="dashboard-empty-state">
+              Loading events…
+            </p>
           ) : upcomingEvents.length === 0 ? (
             <div className="dashboard-empty-state">
               <CalendarDays size={28} />
+
               <h3>No upcoming events</h3>
+
               <p>
                 Events will appear here when the API returns
                 scheduled future events.
@@ -508,38 +607,53 @@ function DashboardOverview({
                 </thead>
 
                 <tbody>
-                  {upcomingEvents.slice(0, 6).map((event, index) => (
-                    <tr
-                      key={
-                        event?.id ??
-                        event?.event_id ??
-                        event?._id ??
-                        `${getEventName(event)}-${index}`
-                      }
-                    >
-                      <td>
-                        <strong>{getEventName(event)}</strong>
-                        <span className="dashboard-subtext">
-                          {event?.category ?? event?.event_type ?? ""}
-                        </span>
-                      </td>
+                  {upcomingEvents
+                    .slice(0, 6)
+                    .map((event, index) => (
+                      <tr
+                        key={
+                          event?.id ??
+                          event?.event_id ??
+                          event?._id ??
+                          `${getEventName(event)}-${index}`
+                        }
+                      >
+                        <td>
+                          <strong>
+                            {getEventName(event)}
+                          </strong>
 
-                      <td>
-                        {formatDate(getEventDate(event))}
-                        <span className="dashboard-subtext">
-                          {formatTime(
-                            event?.time ?? event?.start_time
+                          <span className="dashboard-subtext">
+                            {event?.category ??
+                              event?.event_type ??
+                              ""}
+                          </span>
+                        </td>
+
+                        <td>
+                          {formatDate(
+                            getEventDate(event)
                           )}
-                        </span>
-                      </td>
 
-                      <td>{getVenueName(event, venues)}</td>
+                          <span className="dashboard-subtext">
+                            {formatTime(
+                              event?.time ??
+                                event?.start_time
+                            )}
+                          </span>
+                        </td>
 
-                      <td>
-                        <StatusBadge status={getStatus(event)} />
-                      </td>
-                    </tr>
-                  ))}
+                        <td>
+                          {getVenueName(event, venues)}
+                        </td>
+
+                        <td>
+                          <StatusBadge
+                            status={getStatus(event)}
+                          />
+                        </td>
+                      </tr>
+                    ))}
                 </tbody>
               </table>
             </div>
@@ -548,7 +662,9 @@ function DashboardOverview({
 
         <MiniCalendar
           events={events}
-          onSelectDate={() => onNavigate("Scheduling")}
+          onSelectDate={() =>
+            onNavigate("Scheduling")
+          }
         />
       </div>
 
@@ -559,22 +675,28 @@ function DashboardOverview({
               <h2>Next event</h2>
               <p>Your nearest upcoming event.</p>
             </div>
+
             <Clock3 size={20} />
           </div>
 
           {nextEvent ? (
             <div className="dashboard-next-event">
-              <strong>{getEventName(nextEvent)}</strong>
+              <strong>
+                {getEventName(nextEvent)}
+              </strong>
 
               <p>
                 <CalendarDays size={16} />
-                {formatDate(getEventDate(nextEvent))}
+                {formatDate(
+                  getEventDate(nextEvent)
+                )}
               </p>
 
               <p>
                 <Clock3 size={16} />
                 {formatTime(
-                  nextEvent?.time ?? nextEvent?.start_time
+                  nextEvent?.time ??
+                    nextEvent?.start_time
                 )}
               </p>
 
@@ -583,7 +705,9 @@ function DashboardOverview({
                 {getVenueName(nextEvent, venues)}
               </p>
 
-              <StatusBadge status={getStatus(nextEvent)} />
+              <StatusBadge
+                status={getStatus(nextEvent)}
+              />
             </div>
           ) : (
             <p className="dashboard-empty-state">
@@ -596,17 +720,40 @@ function DashboardOverview({
           <div className="dashboard-panel-heading">
             <div>
               <h2>Workspace modules</h2>
-              <p>Open a module to manage its records.</p>
+              <p>
+                Open a module to manage its records.
+              </p>
             </div>
+
             <Activity size={20} />
           </div>
 
           <div className="dashboard-module-list">
             {[
-              { label: "Events", icon: CalendarDays },
-              { label: "Venues", icon: DoorOpen },
-              { label: "Resources", icon: Package },
-              { label: "Scheduling", icon: CalendarPlus },
+              {
+                label: "Events",
+                icon: CalendarDays,
+              },
+              {
+                label: "Venues",
+                icon: DoorOpen,
+              },
+              {
+                label: "Resources",
+                icon: Package,
+              },
+              {
+                label: "Scheduling",
+                icon: CalendarPlus,
+              },
+              {
+                label: "Attendance",
+                icon: Users,
+              },
+              {
+                label: "Vendors",
+                icon: Building2,
+              },
             ].map(({ label, icon: Icon }) => (
               <button
                 type="button"
@@ -624,6 +771,7 @@ function DashboardOverview({
 
       <footer className="dashboard-footer">
         <span>{new Date().getFullYear()}</span>
+
         <span>
           Dashboard values are calculated from API responses.
         </span>
@@ -632,12 +780,17 @@ function DashboardOverview({
   );
 }
 
-export default function Dashboard({ user: userProp, onLogout }) {
+export default function Dashboard({
+  user: userProp,
+  onLogout,
+}) {
   const [user, setUser] = useState(() => {
     if (userProp) return userProp;
 
     try {
-      return JSON.parse(localStorage.getItem("user") || "null");
+      return JSON.parse(
+        localStorage.getItem("user") || "null"
+      );
     } catch {
       return null;
     }
@@ -650,7 +803,9 @@ export default function Dashboard({ user: userProp, onLogout }) {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    if (userProp) setUser(userProp);
+    if (userProp) {
+      setUser(userProp);
+    }
   }, [userProp]);
 
   const loadDashboardData = useCallback(async () => {
@@ -658,16 +813,31 @@ export default function Dashboard({ user: userProp, onLogout }) {
     setError("");
 
     try {
-      const [eventsResponse, venuesResponse] = await Promise.all([
+      const [
+        eventsResponse,
+        venuesResponse,
+      ] = await Promise.all([
         getEvents(),
         getVenues(),
       ]);
 
-      setEvents(toArray(eventsResponse, ["events", "items"]));
-      setVenues(toArray(venuesResponse, ["venues", "items"]));
+      setEvents(
+        toArray(eventsResponse, [
+          "events",
+          "items",
+        ])
+      );
+
+      setVenues(
+        toArray(venuesResponse, [
+          "venues",
+          "items",
+        ])
+      );
     } catch (err) {
       setError(
-        err?.message ?? "Unable to load dashboard data."
+        err?.message ??
+          "Unable to load dashboard data."
       );
     } finally {
       setLoading(false);
@@ -683,21 +853,27 @@ export default function Dashboard({ user: userProp, onLogout }) {
   }, []);
 
   const handleLogout = useCallback(async () => {
+    // Auth.jsx owns logout when its callback is provided.
+    // Avoid calling logoutUser twice in that case.
+    if (typeof onLogout === "function") {
+      onLogout();
+      return;
+    }
+
     try {
       await logoutUser();
     } catch {
-      // Logout must still clear local credentials if the server is unavailable.
+      // Clear local credentials even if the API is unavailable.
     } finally {
       localStorage.removeItem("token");
       localStorage.removeItem("user");
+      localStorage.removeItem("access_token");
+
       sessionStorage.removeItem("token");
       sessionStorage.removeItem("user");
+      sessionStorage.removeItem("access_token");
 
-      if (onLogout) {
-        onLogout();
-      } else {
-        window.location.assign("/");
-      }
+      window.location.assign("/");
     }
   }, [onLogout]);
 
@@ -720,6 +896,13 @@ export default function Dashboard({ user: userProp, onLogout }) {
       pageContent = <Scheduling user={user} />;
       break;
 
+    case "Attendance":
+      pageContent = <Attendance user={user} />;
+      break;
+    
+    case "Vendors":
+      pageContent = <OrganizerVendors user={user} />;
+      break;
     default:
       pageContent = (
         <DashboardOverview
@@ -749,6 +932,7 @@ export default function Dashboard({ user: userProp, onLogout }) {
             <p className="dashboard-breadcrumb">
               Workspace / {activePage}
             </p>
+
             <h1>{activePage}</h1>
           </div>
 
@@ -764,12 +948,18 @@ export default function Dashboard({ user: userProp, onLogout }) {
               title="Log out"
               onClick={handleLogout}
             >
-              {(getUserName(user).trim().charAt(0) || "U").toUpperCase()}
+              {(
+                getUserName(user)
+                  .trim()
+                  .charAt(0) || "U"
+              ).toUpperCase()}
             </button>
           </div>
         </header>
 
-        <div className="dashboard-content">{pageContent}</div>
+        <div className="dashboard-content">
+          {pageContent}
+        </div>
       </main>
     </div>
   );

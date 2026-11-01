@@ -1807,3 +1807,37 @@
     transition-duration: 0.01ms !important;
   }
 }
+.es-cancel-registration-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  margin-top: 14px;
+  padding: 11px 14px;
+  border: 1px solid #f0caca;
+  border-radius: 10px;
+  background: #fff7f7;
+  color: #b42318;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background 0.2s ease,
+    border-color 0.2s ease,
+    transform 0.2s ease;
+}
+
+.es-cancel-registration-button:hover:not(:disabled) {
+  background: #feecec;
+  border-color: #e8aaaa;
+}
+
+.es-cancel-registration-button:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.es-cancel-registration-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}

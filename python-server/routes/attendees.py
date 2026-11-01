@@ -1,4 +1,6 @@
 
+# attendees.py
+
 import re
 from datetime import datetime, timezone
 
@@ -16,7 +18,14 @@ router = APIRouter(
     tags=["Attendee Registration"],
 )
 
-CATEGORIES = {"General", "VIP", "Speaker", "Volunteer"}
+CATEGORIES = {
+    "General",
+    "VIP",
+    "Speaker",
+    "Volunteer",
+    "Guest",
+    "Sponsor",
+}
 
 
 # ---------------------------------------------------------
@@ -95,7 +104,7 @@ class AttendeeRegistration(BaseModel):
 
         if normalized not in allowed:
             raise ValueError(
-                "Select General, VIP, Speaker, or Volunteer."
+                "Select General, VIP, Speaker, Volunteer, Guest, or Sponsor."
             )
 
         return allowed[normalized]
@@ -106,10 +115,16 @@ class AttendeeRegistration(BaseModel):
 # ---------------------------------------------------------
 
 def require_attendee(user: dict) -> None:
-    if user.get("role") != "Attendee":
+    """
+    Allow any authenticated user to register for events
+    as an attendee.
+
+    Organizer and Vendor accounts can also attend events.
+    """
+    if not user:
         raise HTTPException(
-            status_code=403,
-            detail="Only attendees can use attendee registration.",
+            status_code=401,
+            detail="Authentication required.",
         )
 
 
@@ -173,6 +188,86 @@ def get_event_venue(event: dict) -> str:
     return str(value)
 
 
+def parse_event_datetime(value) -> datetime | None:
+    """
+    Convert a MongoDB datetime or ISO date/time string to an
+    aware datetime.
+
+    Naive datetimes are treated as UTC.
+    """
+
+    if value is None:
+        return None
+
+    if isinstance(value, datetime):
+        parsed = value
+
+    elif isinstance(value, str):
+        value = value.strip()
+
+        if not value:
+            return None
+
+        try:
+            parsed = datetime.fromisoformat(
+                value.replace("Z", "+00:00")
+            )
+        except ValueError:
+            return None
+
+    else:
+        return None
+
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+
+    return parsed
+
+
+def is_event_over(event: dict) -> bool:
+    """
+    Determine whether an event has ended.
+
+    Prefer an end date/time. If none is available, fall back
+    to the event's start/date value.
+    """
+
+    event_time_value = (
+        event.get("end_datetime")
+        or event.get("end_date")
+        or event.get("end_time")
+        or event.get("start_datetime")
+        or event.get("start_date")
+        or event.get("event_date")
+        or event.get("date")
+    )
+
+    event_time = parse_event_datetime(event_time_value)
+
+    if event_time is None:
+        # If the event date cannot be parsed, do not automatically
+        # block registration. Ensure your event model stores a
+        # valid date/time to enforce this check reliably.
+        return False
+
+    return event_time <= datetime.now(timezone.utc)
+
+
+def get_registration_event_id(registration: dict) -> ObjectId | None:
+    stored_event_id = registration.get("event_id")
+
+    if isinstance(stored_event_id, ObjectId):
+        return stored_event_id
+
+    if (
+        isinstance(stored_event_id, str)
+        and ObjectId.is_valid(stored_event_id)
+    ):
+        return ObjectId(stored_event_id)
+
+    return None
+
+
 # ---------------------------------------------------------
 # REGISTER FOR AN EVENT
 # POST /api/attendees/register
@@ -196,7 +291,6 @@ def register_attendee(
             detail="Unable to identify your account email.",
         )
 
-    # The registration email must match the authenticated account.
     submitted_email = data.email.strip().lower()
 
     if submitted_email != account_email:
@@ -234,13 +328,24 @@ def register_attendee(
             detail="The selected event does not exist.",
         )
 
-    if str(event.get("status", "")).strip().lower() in {
-        "cancelled",
-        "canceled",
-    }:
+    # -----------------------------------------------------
+    # CHECK EVENT STATUS
+    # -----------------------------------------------------
+
+    event_status = str(
+        event.get("status", "")
+    ).strip().lower()
+
+    if event_status in {"cancelled", "canceled"}:
         raise HTTPException(
             status_code=409,
             detail="Registration is unavailable for this event.",
+        )
+
+    if is_event_over(event):
+        raise HTTPException(
+            status_code=409,
+            detail="This event has already ended. Registration is closed.",
         )
 
     # -----------------------------------------------------
@@ -305,11 +410,11 @@ def register_attendee(
         )
 
     except PyMongoError:
-        # Registration has already been saved.
+        # Registration is already saved.
         pass
 
     # -----------------------------------------------------
-    # GENERATE DIGITAL TICKET AND QR CODE
+    # GENERATE DIGITAL TICKET
     # -----------------------------------------------------
 
     ticket = None
@@ -324,8 +429,6 @@ def register_attendee(
         )
 
     except Exception as exc:
-        # Do not claim that registration failed: it is already saved.
-        # Log the failure so the missing ticket can be investigated.
         ticket_error = type(exc).__name__
 
         print(
@@ -335,7 +438,7 @@ def register_attendee(
         )
 
     # -----------------------------------------------------
-    # REGISTRATION RESPONSE
+    # RESPONSE
     # -----------------------------------------------------
 
     response = {
@@ -414,7 +517,7 @@ def get_my_registrations(
     results = []
 
     for registration in registrations:
-        stored_event_id = registration.get("event_id")
+        event_oid = get_registration_event_id(registration)
         event = None
 
         # -------------------------------------------------
@@ -422,18 +525,8 @@ def get_my_registrations(
         # -------------------------------------------------
 
         try:
-            if isinstance(stored_event_id, ObjectId):
-                event = events.find_one(
-                    {"_id": stored_event_id}
-                )
-
-            elif (
-                isinstance(stored_event_id, str)
-                and ObjectId.is_valid(stored_event_id)
-            ):
-                event = events.find_one(
-                    {"_id": ObjectId(stored_event_id)}
-                )
+            if event_oid:
+                event = events.find_one({"_id": event_oid})
 
         except PyMongoError:
             raise HTTPException(
@@ -458,13 +551,24 @@ def get_my_registrations(
 
         try:
             ticket = db["tickets"].find_one(
-                {"registration_id": str(registration["_id"])}
+                {
+                    "registration_id": str(
+                        registration["_id"]
+                    )
+                }
             )
 
             if ticket:
                 ticket_info = {
                     "ticket_id": ticket.get("ticket_id"),
-                    "status": ticket.get("status"),
+                    "status": ticket.get("status", "Valid"),
+                    "qr_code": ticket.get("qr_code", ""),
+                    "created_at": serialize_datetime(
+                        ticket.get("created_at")
+                    ),
+                    "checked_in_at": serialize_datetime(
+                        ticket.get("checked_in_at")
+                    ),
                 }
 
         except PyMongoError:
@@ -474,13 +578,15 @@ def get_my_registrations(
             )
 
         # -------------------------------------------------
-        # APPEND REGISTRATION TO RESPONSE
+        # APPEND REGISTRATION
         # -------------------------------------------------
 
         results.append({
             "id": str(registration["_id"]),
             "attendee_id": str(registration["_id"]),
-            "event_id": str(stored_event_id or ""),
+            "event_id": str(
+                registration.get("event_id") or ""
+            ),
             "event_name": event_name,
             "category": registration.get("category", "General"),
             "status": registration.get("status", "Registered"),
@@ -496,4 +602,148 @@ def get_my_registrations(
         "success": True,
         "registrations": results,
         "count": len(results),
+    }
+
+
+# ---------------------------------------------------------
+# CANCEL / UNREGISTER FROM AN EVENT
+# DELETE /api/attendees/registrations/{registration_id}
+# ---------------------------------------------------------
+
+@router.delete("/registrations/{registration_id}")
+def unregister_attendee(
+    registration_id: str,
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+):
+    require_attendee(current_user)
+
+    account_email = str(
+        current_user.get("email", "")
+    ).strip().lower()
+
+    if not account_email:
+        raise HTTPException(
+            status_code=401,
+            detail="Unable to identify your account email.",
+        )
+
+    if not ObjectId.is_valid(registration_id):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid registration ID.",
+        )
+
+    db = request.app.state.db
+
+    attendees = db["attendees"]
+    events = db["events"]
+    tickets = db["tickets"]
+
+    registration_oid = ObjectId(registration_id)
+
+    # -----------------------------------------------------
+    # VERIFY REGISTRATION OWNERSHIP
+    # -----------------------------------------------------
+
+    try:
+        registration = attendees.find_one({
+            "_id": registration_oid,
+            "email": account_email,
+        })
+
+    except PyMongoError:
+        raise HTTPException(
+            status_code=503,
+            detail="Unable to retrieve your registration.",
+        )
+
+    if not registration:
+        raise HTTPException(
+            status_code=404,
+            detail="Registration not found.",
+        )
+
+    if str(
+        registration.get("status", "")
+    ).strip().lower() == "cancelled":
+        raise HTTPException(
+            status_code=409,
+            detail="This registration has already been cancelled.",
+        )
+
+    # -----------------------------------------------------
+    # MARK REGISTRATION AS CANCELLED
+    # -----------------------------------------------------
+
+    try:
+        result = attendees.update_one(
+            {
+                "_id": registration_oid,
+                "email": account_email,
+                "status": {"$ne": "Cancelled"},
+            },
+            {
+                "$set": {
+                    "status": "Cancelled",
+                    "cancelled_at": datetime.now(timezone.utc),
+                }
+            },
+        )
+
+        if result.modified_count == 0:
+            raise HTTPException(
+                status_code=409,
+                detail="This registration has already been cancelled.",
+            )
+
+        # -------------------------------------------------
+        # DECREASE EVENT ATTENDEE COUNT
+        # -------------------------------------------------
+
+        event_oid = get_registration_event_id(registration)
+
+        if event_oid:
+            events.update_one(
+                {
+                    "_id": event_oid,
+                    "attendee_count": {"$gt": 0},
+                },
+                {
+                    "$inc": {
+                        "attendee_count": -1,
+                    }
+                },
+            )
+
+        # -------------------------------------------------
+        # CANCEL ASSOCIATED TICKET
+        # -------------------------------------------------
+
+        tickets.update_one(
+            {
+                "registration_id": str(registration_oid),
+            },
+            {
+                "$set": {
+                    "status": "Cancelled",
+                    "cancelled_at": datetime.now(timezone.utc),
+                }
+            },
+        )
+
+    except HTTPException:
+        raise
+
+    except PyMongoError:
+        raise HTTPException(
+            status_code=503,
+            detail="Unable to cancel your registration. Please try again.",
+        )
+
+    return {
+        "success": True,
+        "message": "Registration cancelled successfully.",
+        "registration_id": str(registration_oid),
+        "status": "Cancelled",
     }

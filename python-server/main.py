@@ -13,6 +13,7 @@ from routes.venues import router as venues_router
 from routes.resources import router as resources_router
 from routes.attendees import router as attendees_router
 from routes.tickets import router as tickets_router
+from routes.vendors import router as vendors_router
 
 
 # ---------------------------------------------------------
@@ -48,8 +49,32 @@ async def lifespan(app: FastAPI):
             name="unique_ticket_registration",
         )
 
+        # -------------------------------------------------
+        # VENDOR INDEXES
+        # -------------------------------------------------
+
+        # One vendor profile per user account.
+        db["vendors"].create_index(
+            [("user_id", 1)],
+            unique=True,
+            name="unique_vendor_user_id",
+        )
+
+        # Efficient filtering of approved vendor profiles.
+        db["vendors"].create_index(
+            [("status", 1), ("category", 1)],
+            name="vendor_status_category",
+        )
+
+        # Efficient vendor directory filtering by city.
+        db["vendors"].create_index(
+            [("status", 1), ("city", 1)],
+            name="vendor_status_city",
+        )
+
         print(f"MongoDB connected successfully: {db.name}")
         print("Digital ticket indexes are ready.")
+        print("Vendor indexes are ready.")
 
         yield
 
@@ -73,9 +98,10 @@ app = FastAPI(
     title="EventSphere API",
     description=(
         "Event management backend built with Python and MongoDB Atlas, "
-        "including digital tickets and QR-code verification."
+        "including digital tickets, QR-code verification, "
+        "and vendor management."
     ),
-    version="1.1.0",
+    version="1.2.0",
     lifespan=lifespan,
 )
 
@@ -106,6 +132,7 @@ app.include_router(venues_router)
 app.include_router(resources_router)
 app.include_router(attendees_router)
 app.include_router(tickets_router)
+app.include_router(vendors_router)
 
 
 # ---------------------------------------------------------
