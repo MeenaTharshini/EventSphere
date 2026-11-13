@@ -65,7 +65,64 @@ function unwrapResponse(response) {
 
   return result;
 }
+function isEventOver(event) {
+  const now = Date.now();
 
+  // Prefer an explicit ending date and time.
+  const completeEnd =
+    event.end_datetime ??
+    event.end_date;
+
+  if (completeEnd) {
+    const value = String(completeEnd).trim();
+
+    // A complete ISO date/time already contains its time.
+    if (/[T ]\d{2}:\d{2}/.test(value)) {
+      const timestamp = new Date(value).getTime();
+
+      if (!Number.isNaN(timestamp)) {
+        return timestamp <= now;
+      }
+    }
+  }
+
+  const dateValue =
+    event.end_date ??
+    event.event_date ??
+    event.date ??
+    event.start_date ??
+    event.start_datetime;
+
+  if (!dateValue) return false;
+
+  const date = String(dateValue).slice(0, 10);
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return false;
+  }
+
+  const endTime = event.end_time
+    ? String(event.end_time).trim()
+    : "23:59:59";
+
+  if (!/^\d{2}:\d{2}(:\d{2})?$/.test(endTime)) {
+    return false;
+  }
+
+  // Interpret event date and time as Indian Standard Time.
+  const normalizedTime =
+    endTime.length === 5
+      ? `${endTime}:00`
+      : endTime;
+
+  const timestamp = new Date(
+    `${date}T${normalizedTime}+05:30`
+  ).getTime();
+
+  if (Number.isNaN(timestamp)) return false;
+
+  return timestamp <= now;
+}
 function normalizeEvents(response) {
   const result = unwrapResponse(response);
 
@@ -76,7 +133,27 @@ function normalizeEvents(response) {
   if (!Array.isArray(items)) return [];
 
   return items
-    .filter((event) => event && typeof event === "object")
+    .filter((event) => {
+      if (!event || typeof event !== "object") {
+        return false;
+      }
+
+      const status = String(event.status ?? "")
+        .trim()
+        .toLowerCase();
+
+      // Exclude cancelled events.
+      if (["cancelled", "canceled"].includes(status)) {
+        return false;
+      }
+
+      // Exclude events whose ending date/time has passed.
+      if (isEventOver(event)) {
+        return false;
+      }
+
+      return true;
+    })
     .map((event) => {
       const venue =
         typeof event.venue === "object" && event.venue
@@ -92,10 +169,15 @@ function normalizeEvents(response) {
             "";
 
       return {
-        id: String(event._id ?? event.id ?? event.event_id ?? "").trim(),
+        id: String(
+          event._id ?? event.id ?? event.event_id ?? ""
+        ).trim(),
 
         name: String(
-          event.name ?? event.title ?? event.event_name ?? ""
+          event.name ??
+            event.title ??
+            event.event_name ??
+            ""
         ).trim(),
 
         date:
@@ -103,8 +185,17 @@ function normalizeEvents(response) {
           event.date ??
           event.start_date ??
           event.start_datetime ??
-          event.start_time ??
           "",
+
+        endDate:
+          event.end_date ??
+          event.event_date ??
+          event.date ??
+          "",
+
+        endTime: event.end_time ?? "",
+
+        endDateTime: event.end_datetime ?? "",
 
         venue: String(venue ?? "").trim(),
 
@@ -119,12 +210,7 @@ function normalizeEvents(response) {
           .toLowerCase(),
       };
     })
-    .filter(
-      (event) =>
-        event.id &&
-        event.name &&
-        !["cancelled", "canceled"].includes(event.status)
-    );
+    .filter((event) => event.id && event.name);
 }
 
 function normalizeRegistrations(response, availableEvents = []) {
@@ -362,6 +448,8 @@ function getErrorMessage(error) {
   const detail =
     error?.response?.data?.detail ??
     error?.response?.data?.message ??
+    error?.data?.detail ??
+    error?.data?.message ??
     error?.detail ??
     error?.message ??
     "Something went wrong. Please try again.";
@@ -370,45 +458,52 @@ function getErrorMessage(error) {
     return detail
       .map((item) => {
         const field = item?.loc?.at(-1) ?? "field";
-
         return `${field}: ${item?.msg ?? "Invalid value"}`;
       })
       .join(". ");
   }
 
-  const message = String(detail);
+  const message = String(detail).trim();
+  const lowerMessage = message.toLowerCase();
 
-  if (/already registered|duplicate key/i.test(message)) {
+  // Check event availability FIRST.
+  if (
+    /event.*(not available|unavailable|cancelled|canceled|ended|expired|closed)/i.test(message) ||
+    /(registration|registering).*(not available|unavailable|closed|ended|expired)/i.test(message) ||
+    /(event has ended|event is over|registration is closed|registration is unavailable|not accepting registrations)/i.test(message)
+  ) {
+    return "This event is no longer available for registration. Please select another event.";
+  }
+
+  if (
+    /already registered|duplicate key/i.test(lowerMessage)
+  ) {
     return "You are already registered for this event.";
   }
 
-  if (/registration email must match/i.test(message)) {
+  if (/registration email must match/i.test(lowerMessage)) {
     return "Your registration email must match your signed-in account email.";
   }
 
-  if (/valid attendee category|select general/i.test(message)) {
+  if (/valid attendee category|select general/i.test(lowerMessage)) {
     return "Please select a valid attendee category.";
   }
 
-  if (/valid event|objectid/i.test(message)) {
+  if (/valid event|objectid/i.test(lowerMessage)) {
     return "The event ID was rejected. Refresh the event list and try again.";
   }
 
-  if (/event does not exist/i.test(message)) {
+  if (/event does not exist/i.test(lowerMessage)) {
     return "This event no longer exists. Please choose another event.";
   }
 
-  if (/registration is unavailable|cancelled/i.test(message)) {
-    return "Registration is unavailable for this event.";
-  }
-
-  if (/only attendees/i.test(message)) {
+  if (/only attendees/i.test(lowerMessage)) {
     return "Please sign in with an attendee account to register.";
   }
 
   if (
     /failed to fetch|network error|connection refused|unable to connect/i.test(
-      message
+      lowerMessage
     )
   ) {
     return "Unable to connect to the server. Check that the backend is running.";

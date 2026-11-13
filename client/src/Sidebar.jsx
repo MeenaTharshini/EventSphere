@@ -1,6 +1,4 @@
 
- // src/Sidebar.jsx
-
 import { useEffect, useRef, useState } from "react";
 import "./Sidebar.css";
 
@@ -12,7 +10,9 @@ const organizerNavigationItems = [
   { label: "Dashboard", icon: "◈", href: "#overview" },
   { label: "Events", icon: "▦", href: "#events" },
   { label: "Attendance", icon: "✓", href: "#attendance" },
+  { label: "Budget", icon: "₹", href: "#budget" },
   { label: "Vendors", icon: "♙", href: "#vendors" },
+  { label: "Sponsorships", icon: "🤝", href: "#sponsorships" },
   { label: "Venues", icon: "⌖", href: "#venues" },
   { label: "Resources", icon: "◇", href: "#resources" },
   { label: "Scheduling", icon: "◷", href: "#scheduling" },
@@ -44,7 +44,10 @@ const attendeeNavigationItems = [
 
 function getUserRole(user) {
   return String(
-    user?.role || user?.user?.role || "Attendee"
+    user?.activeRole ||
+    user?.role ||
+    user?.user?.role ||
+    "Attendee"
   )
     .trim()
     .toLowerCase();

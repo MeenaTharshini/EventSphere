@@ -580,3 +580,45 @@ export function rejectVendor(vendorId) {
     }
   );
 }
+
+export function getSponsorships(params = {}) {
+  const query = new URLSearchParams();
+
+  if (params.event_id) query.set("event_id", params.event_id);
+  if (params.status) query.set("status", params.status);
+  if (params.search) query.set("search", params.search);
+
+  const queryString = query.toString();
+
+  return apiRequest(
+    `/sponsorships/${queryString ? `?${queryString}` : ""}`
+  );
+}
+
+export function getEventSponsorships(eventId) {
+  return apiRequest(`/sponsorships/event/${eventId}`);
+}
+
+export function getSponsorship(id) {
+  return apiRequest(`/sponsorships/${id}`);
+}
+
+export function createSponsorship(data) {
+  return apiRequest("/sponsorships/", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export function updateSponsorship(id, data) {
+  return apiRequest(`/sponsorships/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+}
+
+export function deleteSponsorship(id) {
+  return apiRequest(`/sponsorships/${id}`, {
+    method: "DELETE",
+  });
+}

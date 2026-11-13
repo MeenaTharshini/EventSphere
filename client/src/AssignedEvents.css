@@ -1152,3 +1152,84 @@
     transition-duration: 0.01ms !important;
   }
 }
+/* Register for Event Button Row */
+.es-assigned-register-row {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  width: 100%;
+  margin-top: 18px;
+}
+
+/* Register for Event Button */
+.es-assigned-register-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+
+  padding: 12px 20px;
+  min-height: 46px;
+
+  border: none;
+  border-radius: 12px;
+
+  background: linear-gradient(135deg, #102e29, #10332d);
+  color: #ffffff;
+
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+
+  cursor: pointer;
+  white-space: nowrap;
+
+  box-shadow: 0 5px 14px rgba(99, 102, 241, 0.22);
+
+  transition:
+    background 0.25s ease,
+    transform 0.25s ease,
+    box-shadow 0.25s ease;
+}
+
+/* Button Icons */
+.es-assigned-register-button svg {
+  flex-shrink: 0;
+  transition: transform 0.25s ease;
+}
+
+/* Hover Effect */
+.es-assigned-register-button:hover {
+  background: linear-gradient(135deg, #102e29, #10332d);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(19, 80, 56, 0.863);
+}
+
+/* Arrow Animation */
+.es-assigned-register-button:hover svg:last-child {
+  transform: translate(3px, -2px);
+}
+
+/* Click Effect */
+.es-assigned-register-button:active {
+  transform: translateY(0);
+  box-shadow: 0 3px 8px rgba(99, 102, 241, 0.2);
+}
+
+/* Keyboard Accessibility */
+.es-assigned-register-button:focus-visible {
+  outline: 3px solid rgba(99, 102, 241, 0.4);
+  outline-offset: 3px;
+}
+
+/* Responsive Design */
+@media (max-width: 600px) {
+  .es-assigned-register-row {
+    justify-content: stretch;
+  }
+
+  .es-assigned-register-button {
+    width: 100%;
+    padding: 12px 16px;
+  }
+}

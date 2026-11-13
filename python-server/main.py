@@ -14,7 +14,8 @@ from routes.resources import router as resources_router
 from routes.attendees import router as attendees_router
 from routes.tickets import router as tickets_router
 from routes.vendors import router as vendors_router
-
+from routes.budgets import router as budgets_router
+from routes.sponsorships import router as sponsorships_router
 
 # ---------------------------------------------------------
 # APPLICATION LIFESPAN
@@ -133,7 +134,8 @@ app.include_router(resources_router)
 app.include_router(attendees_router)
 app.include_router(tickets_router)
 app.include_router(vendors_router)
-
+app.include_router(budgets_router)
+app.include_router(sponsorships_router)
 
 # ---------------------------------------------------------
 # ROOT ENDPOINT

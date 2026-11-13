@@ -1,5 +1,6 @@
-from datetime import datetime, timezone
-from typing import Literal
+
+from datetime import datetime, timezone, timedelta
+import re
 
 from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -29,7 +30,11 @@ class VenueData(BaseModel):
     country: str = ""
     postal_code: str = ""
     capacity: int = Field(default=0, ge=0)
-    cost_per_day: float = Field(default=0, ge=0, allow_inf_nan=False)
+    cost_per_day: float = Field(
+        default=0,
+        ge=0,
+        allow_inf_nan=False,
+    )
 
 
 # ---------------------------------------------------------
@@ -49,18 +54,31 @@ def require_admin_or_organizer(
 
 
 # ---------------------------------------------------------
-# DATABASE AND SERIALIZATION HELPERS
+# DATABASE HELPERS
 # ---------------------------------------------------------
 
 def get_venues_collection(request: Request):
     return request.app.state.db["venues"]
 
 
+def get_events_collection(request: Request):
+    return request.app.state.db["events"]
+
+
+# ---------------------------------------------------------
+# SERIALIZATION
+# ---------------------------------------------------------
+
 def serialize_venue(venue: dict) -> dict:
     result = dict(venue)
 
     venue_id = result.pop("_id", result.get("id"))
-    result["id"] = str(venue_id) if venue_id is not None else None
+
+    result["id"] = (
+        str(venue_id)
+        if venue_id is not None
+        else None
+    )
 
     for field in ("created_at", "updated_at"):
         value = result.get(field)
@@ -71,6 +89,10 @@ def serialize_venue(venue: dict) -> dict:
     return result
 
 
+# ---------------------------------------------------------
+# VENUE LOOKUP
+# ---------------------------------------------------------
+
 def get_venue_or_404(collection, venue_id: str) -> dict:
     if not ObjectId.is_valid(venue_id):
         raise HTTPException(
@@ -78,7 +100,9 @@ def get_venue_or_404(collection, venue_id: str) -> dict:
             detail="Invalid venue ID.",
         )
 
-    venue = collection.find_one({"_id": ObjectId(venue_id)})
+    venue = collection.find_one(
+        {"_id": ObjectId(venue_id)}
+    )
 
     if not venue:
         raise HTTPException(
@@ -87,6 +111,120 @@ def get_venue_or_404(collection, venue_id: str) -> dict:
         )
 
     return venue
+
+
+# ---------------------------------------------------------
+# VENUE BOOKING STATUS
+# ---------------------------------------------------------
+
+def get_booked_venue_ids(request: Request) -> set[str]:
+    """
+    Calculate booked venues from actual event records.
+
+    A venue is booked when it has at least one event that:
+    1. Is not cancelled.
+    2. Is not explicitly completed.
+    3. Has not reached its end date and time.
+
+    All event dates and times are interpreted in IST.
+    """
+
+    events_collection = get_events_collection(request)
+
+    # India Standard Time (UTC + 05:30).
+    ist = timezone(timedelta(hours=5, minutes=30))
+
+    now = datetime.now(ist).replace(tzinfo=None)
+
+    booked_venue_ids = set()
+
+    events = events_collection.find(
+        {},
+        {
+            "venue_id": 1,
+            "event_date": 1,
+            "date": 1,
+            "end_date": 1,
+            "end_time": 1,
+            "status": 1,
+        },
+    )
+
+    for event in events:
+
+        venue_id = event.get("venue_id")
+
+        if venue_id is None:
+            continue
+
+        venue_id = str(venue_id).strip()
+
+        if not venue_id:
+            continue
+
+        status = str(
+            event.get("status") or "Scheduled"
+        ).strip().lower()
+
+        # Cancelled and completed events do not reserve venues.
+        if status in {
+            "cancelled",
+            "canceled",
+            "completed",
+        }:
+            continue
+
+        event_date = (
+            event.get("event_date")
+            or event.get("date")
+        )
+
+        end_date = (
+            event.get("end_date")
+            or event_date
+        )
+
+        end_time = event.get("end_time") or "16:00"
+
+        try:
+            event_end = datetime.strptime(
+                f"{end_date} {end_time}",
+                "%Y-%m-%d %H:%M",
+            )
+
+        except (ValueError, TypeError):
+            # Ignore malformed legacy event records.
+            continue
+
+        # Future and currently running events reserve the venue.
+        if event_end > now:
+            booked_venue_ids.add(venue_id)
+
+    return booked_venue_ids
+
+
+def add_venue_availability(
+    venue: dict,
+    booked_venue_ids: set[str],
+) -> dict:
+    """
+    Attach availability fields to the serialized venue.
+    """
+
+    serialized = serialize_venue(venue)
+
+    venue_id = serialized.get("id")
+
+    availability = (
+        "Booked"
+        if str(venue_id) in booked_venue_ids
+        else "Available"
+    )
+
+    serialized["availability"] = availability
+    serialized["availability_status"] = availability
+
+    return serialized
 
 
 # ---------------------------------------------------------
@@ -138,12 +276,22 @@ def validate_venue(data: VenueData) -> dict:
     return venue
 
 
+# ---------------------------------------------------------
+# DUPLICATE VENUE VALIDATION
+# ---------------------------------------------------------
+
 def ensure_unique_venue_name(
     collection,
     name: str,
     exclude_id: ObjectId | None = None,
 ) -> None:
-    query = {"name": {"$regex": f"^{__import__('re').escape(name)}$", "$options": "i"}}
+
+    query = {
+        "name": {
+            "$regex": f"^{re.escape(name)}$",
+            "$options": "i",
+        }
+    }
 
     if exclude_id is not None:
         query["_id"] = {"$ne": exclude_id}
@@ -165,12 +313,18 @@ def get_venues(
     request: Request,
     user: dict = Depends(get_current_user),
 ):
+
     collection = get_venues_collection(request)
+
+    booked_venue_ids = get_booked_venue_ids(request)
 
     venues = collection.find().sort("name", 1)
 
     return [
-        serialize_venue(venue)
+        add_venue_availability(
+            venue,
+            booked_venue_ids,
+        )
         for venue in venues
     ]
 
@@ -186,11 +340,20 @@ def get_venue(
     request: Request,
     user: dict = Depends(get_current_user),
 ):
+
     collection = get_venues_collection(request)
 
-    venue = get_venue_or_404(collection, venue_id)
+    venue = get_venue_or_404(
+        collection,
+        venue_id,
+    )
 
-    return serialize_venue(venue)
+    booked_venue_ids = get_booked_venue_ids(request)
+
+    return add_venue_availability(
+        venue,
+        booked_venue_ids,
+    )
 
 
 # ---------------------------------------------------------
@@ -204,6 +367,7 @@ def create_venue(
     request: Request,
     user: dict = Depends(require_admin_or_organizer),
 ):
+
     collection = get_venues_collection(request)
 
     venue = validate_venue(data)
@@ -217,6 +381,7 @@ def create_venue(
 
     try:
         result = collection.insert_one(venue)
+
     except DuplicateKeyError:
         raise HTTPException(
             status_code=409,
@@ -232,7 +397,6 @@ def create_venue(
 # ---------------------------------------------------------
 # UPDATE VENUE
 # PUT /api/venues/{venue_id}
-# Full-resource update, matching the Node.js API.
 # ---------------------------------------------------------
 
 @router.put("/{venue_id}")
@@ -242,9 +406,14 @@ def update_venue(
     request: Request,
     user: dict = Depends(require_admin_or_organizer),
 ):
+
     collection = get_venues_collection(request)
 
-    existing = get_venue_or_404(collection, venue_id)
+    existing = get_venue_or_404(
+        collection,
+        venue_id,
+    )
+
     venue = validate_venue(data)
 
     ensure_unique_venue_name(
@@ -263,6 +432,7 @@ def update_venue(
             {"_id": existing["_id"]},
             {"$set": venue},
         )
+
     except DuplicateKeyError:
         raise HTTPException(
             status_code=409,
@@ -285,9 +455,25 @@ def delete_venue(
     request: Request,
     user: dict = Depends(require_admin_or_organizer),
 ):
+
     collection = get_venues_collection(request)
 
-    existing = get_venue_or_404(collection, venue_id)
+    existing = get_venue_or_404(
+        collection,
+        venue_id,
+    )
+
+    # Protect venues assigned to active/upcoming events.
+    booked_venue_ids = get_booked_venue_ids(request)
+
+    if str(venue_id) in booked_venue_ids:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "This venue cannot be deleted because it is "
+                "assigned to an active or upcoming event."
+            ),
+        )
 
     result = collection.delete_one(
         {"_id": existing["_id"]}

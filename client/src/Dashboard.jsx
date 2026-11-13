@@ -1,4 +1,3 @@
-// src/Dashboard.jsx
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -16,6 +15,8 @@ import {
   RefreshCw,
   Users,
   Building2,
+  Wallet,
+  Handshake,
 } from "lucide-react";
 
 import {
@@ -31,6 +32,8 @@ import Resources from "./Resources";
 import Scheduling from "./Scheduling";
 import Attendance from "./Attendance";
 import OrganizerVendors from "./OrganizerVendors";
+import Budget from "./Budget";
+import Sponsorships from "./Sponsorships";
 
 import "./Dashboard.css";
 
@@ -751,8 +754,16 @@ function DashboardOverview({
                 icon: Users,
               },
               {
+                label: "Budget",
+                icon: Wallet,
+              },
+              {
                 label: "Vendors",
                 icon: Building2,
+              },
+              {
+                label: "Sponsorships",
+                icon: Handshake,
               },
             ].map(({ label, icon: Icon }) => (
               <button
@@ -899,10 +910,19 @@ export default function Dashboard({
     case "Attendance":
       pageContent = <Attendance user={user} />;
       break;
-    
+
+    case "Budget":
+      pageContent = <Budget user={user} />;
+      break;
+
     case "Vendors":
       pageContent = <OrganizerVendors user={user} />;
       break;
+
+    case "Sponsorships":
+      pageContent = <Sponsorships user={user} />;
+      break;
+
     default:
       pageContent = (
         <DashboardOverview
