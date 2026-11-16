@@ -1042,3 +1042,25 @@ button:disabled {
     transition: none !important;
   }
 }
+/* =====================================================
+   SEPARATE ADMIN LOGIN LINK
+===================================================== */
+
+.admin-login-link {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(128, 128, 128, 0.18);
+}
+
+.admin-login-link span {
+  color: #777;
+}
+
+.admin-login-link button {
+  color: #7c5cff;
+  font-weight: 700;
+}
+
+.admin-login-link button:hover {
+  text-decoration: underline;
+}

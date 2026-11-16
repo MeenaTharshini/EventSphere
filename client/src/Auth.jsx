@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 
 import {
   loginUser,
+  loginAdmin,
   registerUser,
   logoutUser,
 } from "./api";
@@ -27,29 +28,30 @@ const VALID_ROLES = [
   "vendor",
 ];
 
-// Read saved user safely.
+// =========================================================
+// USER HELPERS
+// =========================================================
+
 function getSavedUser() {
   try {
-    return JSON.parse(localStorage.getItem("user") || "null");
+    return JSON.parse(
+      localStorage.getItem("user") || "null"
+    );
   } catch {
     return null;
   }
 }
 
-// Normalize role names.
 function normalizeRole(role) {
   return String(role || "").trim().toLowerCase();
 }
 
-// Get the role used for the current session.
-// activeRole takes priority over the account's original role.
 function getUserRole(user) {
   return normalizeRole(
     user?.activeRole || user?.role
   );
 }
 
-// Get all roles associated with the account.
 function getAvailableRoles(user) {
   const roles = Array.isArray(user?.roles)
     ? user.roles
@@ -59,7 +61,6 @@ function getAvailableRoles(user) {
     .map(normalizeRole)
     .filter((role) => VALID_ROLES.includes(role));
 
-  // Every account can enter the attendee experience.
   if (!normalizedRoles.includes("attendee")) {
     normalizedRoles.unshift("attendee");
   }
@@ -67,14 +68,18 @@ function getAvailableRoles(user) {
   return [...new Set(normalizedRoles)];
 }
 
-// Display role names.
 function formatRole(role) {
   return role.charAt(0).toUpperCase() + role.slice(1);
 }
 
+// =========================================================
+// AUTH COMPONENT
+// =========================================================
+
 export default function Auth() {
   const [user, setUser] = useState(getSavedUser);
 
+  // login | signup | admin-login
   const [mode, setMode] = useState("login");
 
   const [showPassword, setShowPassword] = useState(false);
@@ -84,12 +89,20 @@ export default function Auth() {
   const [success, setSuccess] = useState("");
 
   const [form, setForm] = useState(INITIAL_FORM);
+
   const [vendorPage, setVendorPage] = useState("profile");
-  // Role selected on the login screen.
+
   const [loginRole, setLoginRole] = useState("attendee");
-  const [selectedRegistrationEvent, setSelectedRegistrationEvent] =
-  useState(null);
-  // Handle session expiration.
+
+  const [
+    selectedRegistrationEvent,
+    setSelectedRegistrationEvent,
+  ] = useState(null);
+
+  // =======================================================
+  // SESSION EXPIRATION
+  // =======================================================
+
   useEffect(() => {
     function handleAuthLogout() {
       logoutUser();
@@ -98,6 +111,8 @@ export default function Auth() {
       setMode("login");
       setShowPassword(false);
       setLoginRole("attendee");
+      setVendorPage("profile");
+      setSelectedRegistrationEvent(null);
       setForm(INITIAL_FORM);
 
       setError(
@@ -120,7 +135,10 @@ export default function Auth() {
     };
   }, []);
 
-  // Update form fields.
+  // =======================================================
+  // FORM HANDLERS
+  // =======================================================
+
   function handleChange(event) {
     const { name, value } = event.target;
 
@@ -128,9 +146,10 @@ export default function Auth() {
       ...previous,
       [name]: value,
     }));
+
+    setError("");
   }
 
-  // Switch between login and signup.
   function changeMode(nextMode) {
     setMode(nextMode);
 
@@ -139,7 +158,10 @@ export default function Auth() {
     setShowPassword(false);
   }
 
-  // Login or signup.
+  // =======================================================
+  // LOGIN AND REGISTRATION
+  // =======================================================
+
   async function handleSubmit(event) {
     event.preventDefault();
 
@@ -164,12 +186,13 @@ export default function Auth() {
       return;
     }
 
+    // Backend password requirement is 8 characters.
     if (
       mode === "signup" &&
-      password.length < 6
+      password.length < 8
     ) {
       setError(
-        "Your password must contain at least 6 characters."
+        "Your password must contain at least 8 characters."
       );
       return;
     }
@@ -177,7 +200,10 @@ export default function Auth() {
     setLoading(true);
 
     try {
-      // SIGNUP
+      // =================================================
+      // PUBLIC USER SIGNUP
+      // =================================================
+
       if (mode === "signup") {
         await registerUser({
           name: form.name.trim(),
@@ -201,7 +227,65 @@ export default function Auth() {
         setShowPassword(false);
       }
 
-      // LOGIN
+      // =================================================
+      // SEPARATE ADMIN LOGIN
+      // =================================================
+
+      else if (mode === "admin-login") {
+        const result = await loginAdmin({
+          email,
+          password,
+        });
+
+        if (!result?.user || !result?.token) {
+          logoutUser();
+
+          throw new Error(
+            "Admin login failed. Please try again."
+          );
+        }
+
+        const adminRole = normalizeRole(
+          result.user.role
+        );
+
+        if (
+          adminRole !== "admin" &&
+          adminRole !== "administrator"
+        ) {
+          logoutUser();
+
+          throw new Error(
+            "This account does not have administrator access."
+          );
+        }
+
+        // Set Admin as the active session role.
+        const sessionUser = {
+          ...result.user,
+          activeRole: "admin",
+        };
+
+        localStorage.setItem(
+          "user",
+          JSON.stringify(sessionUser)
+        );
+
+        setUser(sessionUser);
+
+        setForm((previous) => ({
+          ...previous,
+          password: "",
+        }));
+
+        setError("");
+        setSuccess("");
+      }
+
+      // =================================================
+      // NORMAL USER LOGIN
+      // =================================================
+
       else {
         const result = await loginUser({
           email,
@@ -218,12 +302,26 @@ export default function Auth() {
 
         const loggedInUser = result.user;
 
+        // Admin accounts must use the separate portal.
+        const accountRole = normalizeRole(
+          loggedInUser.role
+        );
+
+        if (
+          accountRole === "admin" ||
+          accountRole === "administrator"
+        ) {
+          logoutUser();
+
+          throw new Error(
+            "Administrators must use the separate Admin Login portal."
+          );
+        }
+
         const accountRoles = getAvailableRoles(
           loggedInUser
         );
 
-        // Attendee access is available to every account.
-        // Organizer/vendor access requires the corresponding role.
         const selectedRole = normalizeRole(loginRole);
 
         if (
@@ -239,7 +337,6 @@ export default function Auth() {
           );
         }
 
-        // Store the selected role separately.
         const sessionUser = {
           ...loggedInUser,
           activeRole: selectedRole,
@@ -270,7 +367,10 @@ export default function Auth() {
     }
   }
 
-  // Logout.
+  // =======================================================
+  // LOGOUT
+  // =======================================================
+
   function handleLogout() {
     logoutUser();
 
@@ -278,17 +378,33 @@ export default function Auth() {
     setMode("login");
     setShowPassword(false);
     setLoginRole("attendee");
+    setVendorPage("profile");
+    setSelectedRegistrationEvent(null);
     setForm(INITIAL_FORM);
 
     setError("");
     setSuccess("You have been signed out.");
   }
 
-  // Route according to the selected session role.
+  // =======================================================
+  // ROLE-BASED ROUTING
+  // =======================================================
+
   const role = getUserRole(user);
 
   if (user) {
     switch (role) {
+      // ADMIN
+      case "admin":
+      case "administrator":
+        return (
+          <Dashboard
+            user={user}
+            onLogout={handleLogout}
+          />
+        );
+
+      // ATTENDEE
       case "attendee":
         return (
           <AttendeeRegistration
@@ -297,42 +413,44 @@ export default function Auth() {
           />
         );
 
+      // VENDOR
       case "vendor":
-  if (vendorPage === "assigned-events") {
-    return (
-      <AssignedEvents
-        user={user}
-        onBack={() => setVendorPage("profile")}
-        onLogout={handleLogout}
-        onRegister={(event) => {
-          setSelectedRegistrationEvent(event);
-          setVendorPage("attendee-registration");
-        }}
-      />
-    );
-  }
+        if (vendorPage === "assigned-events") {
+          return (
+            <AssignedEvents
+              user={user}
+              onBack={() => setVendorPage("profile")}
+              onLogout={handleLogout}
+              onRegister={(event) => {
+                setSelectedRegistrationEvent(event);
+                setVendorPage("attendee-registration");
+              }}
+            />
+          );
+        }
 
-  if (vendorPage === "attendee-registration") {
-    return (
-      <AttendeeRegistration
-        user={user}
-        event={selectedRegistrationEvent}
-        onLogout={handleLogout}
-        onBack={() => setVendorPage("assigned-events")}
-      />
-    );
-  }
+        if (vendorPage === "attendee-registration") {
+          return (
+            <AttendeeRegistration
+              user={user}
+              event={selectedRegistrationEvent}
+              onLogout={handleLogout}
+              onBack={() => setVendorPage("assigned-events")}
+            />
+          );
+        }
 
-  return (
-    <VendorProfile
-      user={user}
-      onLogout={handleLogout}
-      onViewAssignedEvents={() =>
-        setVendorPage("assigned-events")
-      }
-    />
-  );
+        return (
+          <VendorProfile
+            user={user}
+            onLogout={handleLogout}
+            onViewAssignedEvents={() =>
+              setVendorPage("assigned-events")
+            }
+          />
+        );
 
+      // ORGANIZER
       case "organizer":
         return (
           <Dashboard
@@ -341,6 +459,7 @@ export default function Auth() {
           />
         );
 
+      // UNKNOWN ROLE
       default:
         return (
           <main className="auth-page">
@@ -370,11 +489,19 @@ export default function Auth() {
     }
   }
 
+  // =======================================================
+  // AUTHENTICATION PAGE
+  // =======================================================
+
+  const isAdminLogin = mode === "admin-login";
+
   return (
     <main className="auth-page">
       <section className="auth-shell">
 
+        {/* ============================================= */}
         {/* LEFT VISUAL SECTION */}
+        {/* ============================================= */}
 
         <aside className="auth-visual">
           <div className="brand">
@@ -460,7 +587,9 @@ export default function Auth() {
           </div>
         </aside>
 
+        {/* ============================================= */}
         {/* RIGHT AUTHENTICATION SECTION */}
+        {/* ============================================= */}
 
         <section className="auth-panel">
           <div className="mobile-brand">
@@ -476,57 +605,65 @@ export default function Auth() {
 
           <div className="auth-content">
 
-            {/* Heading */}
+            {/* HEADING */}
 
             <div className="auth-heading">
               <span className="eyebrow">
-                {mode === "login"
-                  ? "WELCOME BACK"
-                  : "GET STARTED"}
+                {isAdminLogin
+                  ? "ADMINISTRATOR ACCESS"
+                  : mode === "login"
+                    ? "WELCOME BACK"
+                    : "GET STARTED"}
               </span>
 
               <h2>
-                {mode === "login"
-                  ? "Sign in to your account"
-                  : "Create your account"}
+                {isAdminLogin
+                  ? "Admin Sign In"
+                  : mode === "login"
+                    ? "Sign in to your account"
+                    : "Create your account"}
               </h2>
 
               <p>
-                {mode === "login"
-                  ? "Choose how you want to continue."
-                  : "Join EventSphere and start organizing your events."}
+                {isAdminLogin
+                  ? "Access the EventSphere administration workspace using your authorized credentials."
+                  : mode === "login"
+                    ? "Choose how you want to continue."
+                    : "Join EventSphere and start organizing your events."}
               </p>
             </div>
 
-            {/* Login / Signup tabs */}
+            {/* LOGIN / SIGNUP TABS */}
 
-            <div className="auth-tabs">
-              <button
-                type="button"
-                className={
-                  mode === "login" ? "active" : ""
-                }
-                onClick={() =>
-                  changeMode("login")
-                }
-              >
-                Sign in
-              </button>
+            {!isAdminLogin && (
+              <div className="auth-tabs">
+                <button
+                  type="button"
+                  className={
+                    mode === "login" ? "active" : ""
+                  }
+                  onClick={() =>
+                    changeMode("login")
+                  }
+                >
+                  Sign in
+                </button>
 
-              <button
-                type="button"
-                className={
-                  mode === "signup" ? "active" : ""
-                }
-                onClick={() =>
-                  changeMode("signup")
-                }
-              >
-                Sign up
-              </button>
-            </div>
+                <button
+                  type="button"
+                  className={
+                    mode === "signup" ? "active" : ""
+                  }
+                  onClick={() =>
+                    changeMode("signup")
+                  }
+                >
+                  Sign up
+                </button>
+              </div>
+            )}
 
-            {/* Error message */}
+            {/* ERROR MESSAGE */}
 
             {error && (
               <div
@@ -537,7 +674,7 @@ export default function Auth() {
               </div>
             )}
 
-            {/* Success message */}
+            {/* SUCCESS MESSAGE */}
 
             {success && (
               <div
@@ -548,12 +685,14 @@ export default function Auth() {
               </div>
             )}
 
+            {/* AUTHENTICATION FORM */}
+
             <form
               onSubmit={handleSubmit}
               className="auth-form"
             >
 
-              {/* Full name - signup only */}
+              {/* FULL NAME */}
 
               {mode === "signup" && (
                 <div className="form-field">
@@ -574,7 +713,7 @@ export default function Auth() {
                 </div>
               )}
 
-              {/* Email */}
+              {/* EMAIL */}
 
               <div className="form-field">
                 <label htmlFor="email">
@@ -593,7 +732,7 @@ export default function Auth() {
                 />
               </div>
 
-              {/* Account type - signup only */}
+              {/* SIGNUP ROLE */}
 
               {mode === "signup" && (
                 <div className="form-field">
@@ -627,7 +766,7 @@ export default function Auth() {
                 </div>
               )}
 
-              {/* Login role selection */}
+              {/* NORMAL LOGIN ROLE */}
 
               {mode === "login" && (
                 <div className="form-field">
@@ -665,7 +804,7 @@ export default function Auth() {
                 </div>
               )}
 
-              {/* Password */}
+              {/* PASSWORD */}
 
               <div className="form-field">
                 <div className="label-row">
@@ -673,7 +812,7 @@ export default function Auth() {
                     Password
                   </label>
 
-                  {mode === "login" && (
+                  {(mode === "login" || isAdminLogin) && (
                     <span className="secure-label">
                       <span>●</span>
                       Secure sign in
@@ -698,13 +837,13 @@ export default function Auth() {
                     value={form.password}
                     onChange={handleChange}
                     autoComplete={
-                      mode === "login"
-                        ? "current-password"
-                        : "new-password"
+                      mode === "signup"
+                        ? "new-password"
+                        : "current-password"
                     }
                     minLength={
                       mode === "signup"
-                        ? 6
+                        ? 8
                         : undefined
                     }
                     required
@@ -731,7 +870,7 @@ export default function Auth() {
                 </div>
               </div>
 
-              {/* Login note */}
+              {/* LOGIN NOTE */}
 
               {mode === "login" && (
                 <div className="form-options">
@@ -741,7 +880,15 @@ export default function Auth() {
                 </div>
               )}
 
-              {/* Submit */}
+              {isAdminLogin && (
+                <div className="form-options">
+                  <span className="login-note">
+                    This portal is restricted to authorized administrators.
+                  </span>
+                </div>
+              )}
+
+              {/* SUBMIT BUTTON */}
 
               <button
                 type="submit"
@@ -750,9 +897,11 @@ export default function Auth() {
               >
                 {loading
                   ? "Please wait..."
-                  : mode === "login"
-                    ? `Continue as ${formatRole(loginRole)}`
-                    : "Create account"}
+                  : isAdminLogin
+                    ? "Sign in as Admin"
+                    : mode === "login"
+                      ? `Continue as ${formatRole(loginRole)}`
+                      : "Create account"}
 
                 {!loading && (
                   <span aria-hidden="true">
@@ -762,7 +911,9 @@ export default function Auth() {
               </button>
             </form>
 
-            {/* Switch between modes */}
+            {/* ========================================= */}
+            {/* MODE SWITCH */}
+            {/* ========================================= */}
 
             <div className="auth-switch">
               {mode === "login" ? (
@@ -778,7 +929,7 @@ export default function Auth() {
                     Create an account
                   </button>
                 </>
-              ) : (
+              ) : mode === "signup" ? (
                 <>
                   Already have an account?{" "}
 
@@ -791,8 +942,51 @@ export default function Auth() {
                     Sign in
                   </button>
                 </>
+              ) : (
+                <>
+                  Not an administrator?{" "}
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      changeMode("login");
+                      setForm(INITIAL_FORM);
+                    }}
+                  >
+                    Back to user login
+                  </button>
+                </>
               )}
             </div>
+
+            {/* SEPARATE ADMIN LOGIN LINK */}
+
+            {mode === "login" && (
+              <div className="auth-switch admin-login-link">
+                <span>
+                  Administrator?
+                </span>{" "}
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setForm((previous) => ({
+                      ...previous,
+                      password: "",
+                    }));
+
+                    setMode("admin-login");
+                    setError("");
+                    setSuccess("");
+                    setShowPassword(false);
+                  }}
+                >
+                  Admin Login
+                </button>
+              </div>
+            )}
+
+            {/* FOOTER */}
 
             <div className="auth-legal">
               By continuing, you agree to use

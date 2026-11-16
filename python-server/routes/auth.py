@@ -5,13 +5,39 @@ from typing import Literal
 
 import bcrypt
 import jwt
+
 from bson import ObjectId
-from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    Request,
+)
+
+from fastapi.security import (
+    HTTPBearer,
+    HTTPAuthorizationCredentials,
+)
+
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    EmailStr,
+    Field,
+)
+
 from pymongo.errors import DuplicateKeyError
 
-router = APIRouter(prefix="/api/auth", tags=["Authentication"])
+
+# ---------------------------------------------------------
+# ROUTER CONFIGURATION
+# ---------------------------------------------------------
+
+router = APIRouter(
+    prefix="/api/auth",
+    tags=["Authentication"],
+)
 
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRY_HOURS = 24
@@ -19,6 +45,7 @@ JWT_EXPIRY_HOURS = 24
 # Enables the Authorize button in Swagger UI.
 bearer_scheme = HTTPBearer(auto_error=False)
 
+# Public signup roles.
 PublicRole = Literal["Organizer", "Vendor", "Attendee"]
 
 
@@ -29,9 +56,20 @@ PublicRole = Literal["Organizer", "Vendor", "Attendee"]
 class RegisterRequest(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
-    name: str = Field(..., min_length=1, max_length=100)
+    name: str = Field(
+        ...,
+        min_length=1,
+        max_length=100,
+    )
+
     email: EmailStr
-    password: str = Field(..., min_length=8, max_length=128)
+
+    password: str = Field(
+        ...,
+        min_length=8,
+        max_length=128,
+    )
+
     role: PublicRole
 
 
@@ -39,7 +77,30 @@ class LoginRequest(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
     email: EmailStr
-    password: str = Field(..., min_length=1, max_length=128)
+
+    password: str = Field(
+        ...,
+        min_length=1,
+        max_length=128,
+    )
+
+
+class AdminCreateRequest(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    name: str = Field(
+        ...,
+        min_length=1,
+        max_length=100,
+    )
+
+    email: EmailStr
+
+    password: str = Field(
+        ...,
+        min_length=8,
+        max_length=128,
+    )
 
 
 # ---------------------------------------------------------
@@ -66,12 +127,23 @@ def get_users_collection(request: Request):
     return request.app.state.db["users"]
 
 
+def normalize_role(role) -> str:
+    return str(role or "").strip().lower()
+
+
+def is_admin(user: dict) -> bool:
+    return normalize_role(user.get("role")) in {
+        "admin",
+        "administrator",
+    }
+
+
 def serialize_user(user: dict) -> dict:
     return {
         "id": str(user["_id"]),
-        "name": user["name"],
-        "email": user["email"],
-        "role": user["role"],
+        "name": user.get("name", ""),
+        "email": user.get("email", ""),
+        "role": user.get("role", ""),
     }
 
 
@@ -88,7 +160,11 @@ def hash_password(password: str) -> str:
     ).decode("utf-8")
 
 
-def verify_password(password: str, password_hash: str) -> bool:
+def verify_password(
+    password: str,
+    password_hash: str,
+) -> bool:
+
     if not isinstance(password_hash, str) or not password_hash:
         return False
 
@@ -97,8 +173,30 @@ def verify_password(password: str, password_hash: str) -> bool:
             password.encode("utf-8"),
             password_hash.encode("utf-8"),
         )
+
     except (ValueError, TypeError, AttributeError):
         return False
+
+
+# ---------------------------------------------------------
+# JWT TOKEN CREATION
+# ---------------------------------------------------------
+
+def create_access_token(user: dict) -> str:
+    now = datetime.now(timezone.utc)
+
+    payload = {
+        "id": str(user["_id"]),
+        "role": user["role"],
+        "iat": now,
+        "exp": now + timedelta(hours=JWT_EXPIRY_HOURS),
+    }
+
+    return jwt.encode(
+        payload,
+        get_jwt_secret(),
+        algorithm=JWT_ALGORITHM,
+    )
 
 
 # ---------------------------------------------------------
@@ -111,7 +209,9 @@ def get_current_user(
         bearer_scheme
     ),
 ) -> dict:
-    # 1. Check for a Bearer token.
+
+    # 1. Check Bearer token.
+
     if credentials is None:
         raise HTTPException(
             status_code=401,
@@ -135,7 +235,8 @@ def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # 2. Validate the JWT.
+    # 2. Validate JWT.
+
     try:
         payload = jwt.decode(
             token,
@@ -160,7 +261,8 @@ def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # 3. Validate the user ID and role.
+    # 3. Validate token fields.
+
     user_id = payload.get("id")
     token_role = payload.get("role")
 
@@ -175,11 +277,13 @@ def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # 4. Find the user in MongoDB.
+    # 4. Retrieve user from MongoDB.
+
     try:
         user = get_users_collection(request).find_one(
             {"_id": ObjectId(user_id)}
         )
+
     except Exception:
         raise HTTPException(
             status_code=500,
@@ -193,7 +297,8 @@ def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # 5. Ensure the role in the token matches the database.
+    # 5. Ensure token role matches current database role.
+
     if user.get("role") != token_role:
         raise HTTPException(
             status_code=401,
@@ -205,15 +310,36 @@ def get_current_user(
 
 
 # ---------------------------------------------------------
-# REGISTER
+# ADMIN AUTHORIZATION DEPENDENCY
+# ---------------------------------------------------------
+
+def get_current_admin(
+    user: dict = Depends(get_current_user),
+) -> dict:
+
+    if not is_admin(user):
+        raise HTTPException(
+            status_code=403,
+            detail="Administrator access required.",
+        )
+
+    return user
+
+
+# ---------------------------------------------------------
+# NORMAL USER REGISTRATION
 # POST /api/auth/register
 # ---------------------------------------------------------
 
-@router.post("/register", status_code=201)
+@router.post(
+    "/register",
+    status_code=201,
+)
 def register(
     data: RegisterRequest,
     request: Request,
 ):
+
     users = get_users_collection(request)
 
     name = data.name.strip()
@@ -222,8 +348,10 @@ def register(
     if not name:
         raise HTTPException(
             status_code=400,
-            detail="All fields are required.",
+            detail="Name is required.",
         )
+
+    # Check duplicate email.
 
     if users.find_one({"email": email}):
         raise HTTPException(
@@ -241,6 +369,7 @@ def register(
 
     try:
         users.insert_one(user)
+
     except DuplicateKeyError:
         raise HTTPException(
             status_code=409,
@@ -253,7 +382,7 @@ def register(
 
 
 # ---------------------------------------------------------
-# LOGIN
+# NORMAL USER LOGIN
 # POST /api/auth/login
 # ---------------------------------------------------------
 
@@ -262,10 +391,14 @@ def login(
     data: LoginRequest,
     request: Request,
 ):
+
     users = get_users_collection(request)
 
     email = str(data.email).strip().lower()
-    user = users.find_one({"email": email})
+
+    user = users.find_one({
+        "email": email
+    })
 
     if not user or not verify_password(
         data.password,
@@ -276,20 +409,15 @@ def login(
             detail="Invalid email or password.",
         )
 
-    now = datetime.now(timezone.utc)
+    # Admin accounts must use the separate Admin portal.
 
-    payload = {
-        "id": str(user["_id"]),
-        "role": user["role"],
-        "iat": now,
-        "exp": now + timedelta(hours=JWT_EXPIRY_HOURS),
-    }
+    if is_admin(user):
+        raise HTTPException(
+            status_code=403,
+            detail="Please use the separate Admin login portal.",
+        )
 
-    token = jwt.encode(
-        payload,
-        get_jwt_secret(),
-        algorithm=JWT_ALGORITHM,
-    )
+    token = create_access_token(user)
 
     return {
         "message": "Login successful",
@@ -299,7 +427,111 @@ def login(
 
 
 # ---------------------------------------------------------
-# CURRENT USER
+# SEPARATE ADMIN LOGIN
+# POST /api/auth/admin/login
+# ---------------------------------------------------------
+
+@router.post("/admin/login")
+def admin_login(
+    data: LoginRequest,
+    request: Request,
+):
+
+    users = get_users_collection(request)
+
+    email = str(data.email).strip().lower()
+
+    user = users.find_one({
+        "email": email
+    })
+
+    if not user or not verify_password(
+        data.password,
+        user.get("password_hash", ""),
+    ):
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid Admin email or password.",
+        )
+
+    # Only actual Admin accounts can enter this portal.
+
+    if not is_admin(user):
+        raise HTTPException(
+            status_code=403,
+            detail="This account does not have Admin privileges.",
+        )
+
+    token = create_access_token(user)
+
+    return {
+        "message": "Admin login successful",
+        "token": token,
+        "user": serialize_user(user),
+    }
+
+
+# ---------------------------------------------------------
+# CREATE ADDITIONAL ADMIN
+# POST /api/auth/admin/create
+# ADMIN ONLY
+# ---------------------------------------------------------
+
+@router.post(
+    "/admin/create",
+    status_code=201,
+)
+def create_admin(
+    data: AdminCreateRequest,
+    request: Request,
+    current_admin: dict = Depends(get_current_admin),
+):
+
+    users = get_users_collection(request)
+
+    name = data.name.strip()
+    email = str(data.email).strip().lower()
+
+    if not name:
+        raise HTTPException(
+            status_code=400,
+            detail="Admin name is required.",
+        )
+
+    if users.find_one({"email": email}):
+        raise HTTPException(
+            status_code=409,
+            detail="This email is already registered.",
+        )
+
+    admin_document = {
+        "name": name,
+        "email": email,
+        "password_hash": hash_password(data.password),
+        "role": "Admin",
+        "created_at": datetime.now(timezone.utc),
+        "created_by": str(current_admin["_id"]),
+    }
+
+    try:
+        result = users.insert_one(admin_document)
+
+    except DuplicateKeyError:
+        raise HTTPException(
+            status_code=409,
+            detail="This email is already registered.",
+        )
+
+    admin_document["_id"] = result.inserted_id
+
+    return {
+        "message": "Admin account created successfully.",
+        "user": serialize_user(admin_document),
+    }
+
+
+# ---------------------------------------------------------
+# CURRENT AUTHENTICATED USER
 # GET /api/auth/me
 # ---------------------------------------------------------
 
@@ -307,6 +539,7 @@ def login(
 def get_me(
     user: dict = Depends(get_current_user),
 ):
+
     return {
         "user": serialize_user(user)
     }

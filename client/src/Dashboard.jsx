@@ -6,9 +6,11 @@ import {
   AlertCircle,
   CalendarDays,
   CalendarPlus,
+  CheckCircle2,
   ChevronRight,
   Clock3,
   DoorOpen,
+  LoaderCircle,
   MapPin,
   Package,
   Plus,
@@ -17,9 +19,13 @@ import {
   Building2,
   Wallet,
   Handshake,
+  ShieldCheck,
+  XCircle,
+  IndianRupee,
 } from "lucide-react";
 
 import {
+  apiRequest,
   getEvents,
   getVenues,
   logoutUser,
@@ -36,6 +42,10 @@ import Budget from "./Budget";
 import Sponsorships from "./Sponsorships";
 
 import "./Dashboard.css";
+
+/* =======================================================
+   HELPERS
+======================================================= */
 
 const EMPTY_ARRAY = [];
 
@@ -59,6 +69,15 @@ function toArray(response, keys = []) {
   return EMPTY_ARRAY;
 }
 
+function getId(item) {
+  return String(
+    item?.id ??
+    item?._id ??
+    item?.event_id ??
+    ""
+  );
+}
+
 function getEventDate(event) {
   const value =
     event?.date ??
@@ -68,7 +87,6 @@ function getEventDate(event) {
 
   if (!value) return null;
 
-  // Parse date-only strings in local time to avoid timezone shifts.
   if (
     typeof value === "string" &&
     /^\d{4}-\d{2}-\d{2}$/.test(value)
@@ -96,7 +114,7 @@ function formatDate(value) {
     return String(value);
   }
 
-  return new Intl.DateTimeFormat(undefined, {
+  return new Intl.DateTimeFormat("en-IN", {
     day: "numeric",
     month: "short",
     year: "numeric",
@@ -106,14 +124,11 @@ function formatDate(value) {
 function formatTime(value) {
   if (!value) return "Time not available";
 
-  if (
-    typeof value === "string" &&
-    value.includes("T")
-  ) {
+  if (typeof value === "string" && value.includes("T")) {
     const date = new Date(value);
 
     if (!Number.isNaN(date.getTime())) {
-      return new Intl.DateTimeFormat(undefined, {
+      return new Intl.DateTimeFormat("en-IN", {
         hour: "numeric",
         minute: "2-digit",
       }).format(date);
@@ -136,7 +151,7 @@ function formatTime(value) {
     return String(value);
   }
 
-  return new Intl.DateTimeFormat(undefined, {
+  return new Intl.DateTimeFormat("en-IN", {
     hour: "numeric",
     minute: "2-digit",
   }).format(date);
@@ -146,6 +161,7 @@ function getEventName(event) {
   return (
     event?.title ??
     event?.event_name ??
+    event?.eventName ??
     event?.name ??
     "Untitled event"
   );
@@ -157,10 +173,7 @@ function getStatus(event) {
   if (value.includes("cancel")) return "Cancelled";
   if (value.includes("complete")) return "Completed";
 
-  if (
-    value.includes("progress") ||
-    value.includes("ongoing")
-  ) {
+  if (value.includes("progress") || value.includes("ongoing")) {
     return "In Progress";
   }
 
@@ -177,17 +190,19 @@ function getVenueName(event, venues) {
   const venueId =
     event?.venue_id ??
     event?.venueId ??
-    event?.venue?.id;
+    event?.venue?.id ??
+    event?.venue;
 
-  if (venueId == null) {
-    return "Venue not assigned";
-  }
+  if (!venueId) return "Venue not assigned";
 
-  const venue = venues.find(
-    (item) =>
-      String(item?.id ?? item?.venue_id ?? item?._id) ===
-      String(venueId)
-  );
+  const venue = venues.find((item) => {
+    const id =
+      item?.id ??
+      item?.venue_id ??
+      item?._id;
+
+    return String(id) === String(venueId);
+  });
 
   return (
     venue?.name ??
@@ -206,6 +221,22 @@ function getUserName(user) {
   );
 }
 
+function getUserRole(user) {
+  return String(
+    user?.activeRole ??
+    user?.role ??
+    user?.user_role ??
+    user?.user?.role ??
+    ""
+  )
+    .trim()
+    .toLowerCase();
+}
+
+function isAdmin(user) {
+  return ["admin", "administrator"].includes(getUserRole(user));
+}
+
 function getGreeting() {
   const hour = new Date().getHours();
 
@@ -214,6 +245,26 @@ function getGreeting() {
 
   return "Good evening";
 }
+
+function money(value) {
+  return new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency: "INR",
+    maximumFractionDigits: 2,
+  }).format(Number(value) || 0);
+}
+
+function getTimestamp(value) {
+  if (!value) return 0;
+
+  const timestamp = new Date(value).getTime();
+
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+/* =======================================================
+   REUSABLE COMPONENTS
+======================================================= */
 
 function StatCard({
   icon: Icon,
@@ -227,6 +278,7 @@ function StatCard({
       type="button"
       className="dashboard-stat-card"
       onClick={onClick}
+      disabled={!onClick}
     >
       <span className="dashboard-stat-icon">
         <Icon size={21} />
@@ -259,10 +311,12 @@ function StatusBadge({ status }) {
   );
 }
 
+/* =======================================================
+   MINI EVENT CALENDAR
+======================================================= */
+
 function MiniCalendar({ events, onSelectDate }) {
-  const [monthDate, setMonthDate] = useState(
-    () => new Date()
-  );
+  const [monthDate, setMonthDate] = useState(() => new Date());
 
   const year = monthDate.getFullYear();
   const month = monthDate.getMonth();
@@ -289,10 +343,7 @@ function MiniCalendar({ events, onSelectDate }) {
   }, [events, year, month]);
 
   const cells = [
-    ...Array.from(
-      { length: firstWeekday },
-      () => null
-    ),
+    ...Array.from({ length: firstWeekday }, () => null),
     ...Array.from(
       { length: daysInMonth },
       (_, index) => index + 1
@@ -314,9 +365,7 @@ function MiniCalendar({ events, onSelectDate }) {
             type="button"
             aria-label="Previous month"
             onClick={() =>
-              setMonthDate(
-                new Date(year, month - 1, 1)
-              )
+              setMonthDate(new Date(year, month - 1, 1))
             }
           >
             ‹
@@ -326,9 +375,7 @@ function MiniCalendar({ events, onSelectDate }) {
             type="button"
             aria-label="Next month"
             onClick={() =>
-              setMonthDate(
-                new Date(year, month + 1, 1)
-              )
+              setMonthDate(new Date(year, month + 1, 1))
             }
           >
             ›
@@ -407,6 +454,497 @@ function MiniCalendar({ events, onSelectDate }) {
   );
 }
 
+/* =======================================================
+   ADMIN EXPENSE APPROVALS
+======================================================= */
+
+function ExpenseApprovals({ user }) {
+  const [approvals, setApprovals] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [processingId, setProcessingId] = useState("");
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+
+  const loadApprovals = useCallback(async (isRefresh = false) => {
+    if (isRefresh) {
+      setRefreshing(true);
+    } else {
+      setLoading(true);
+    }
+
+    setError("");
+
+    try {
+      const eventsResponse = await getEvents();
+
+      const eventList = toArray(eventsResponse, [
+        "events",
+        "items",
+      ]);
+
+      const budgetResults = await Promise.allSettled(
+        eventList.map(async (event) => {
+          const eventId = getId(event);
+
+          if (!eventId) return [];
+
+          const response = await apiRequest(
+            `/budgets/event/${encodeURIComponent(eventId)}`
+          );
+
+          const expenses = Array.isArray(response?.expenses)
+            ? response.expenses
+            : Array.isArray(response?.data?.expenses)
+              ? response.data.expenses
+              : [];
+
+          const returnedEvent =
+            response?.event ??
+            response?.data?.event ??
+            event;
+
+          return expenses
+            .filter(
+              (expense) =>
+                String(expense?.status ?? "Pending")
+                  .trim()
+                  .toLowerCase() === "pending"
+            )
+            .map((expense) => ({
+              ...expense,
+
+              event_id: expense.event_id || eventId,
+
+              event_name:
+                returnedEvent?.name ||
+                returnedEvent?.title ||
+                returnedEvent?.event_name ||
+                getEventName(event),
+
+              event_date:
+                returnedEvent?.event_date ??
+                returnedEvent?.date ??
+                event?.event_date ??
+                event?.date ??
+                null,
+            }));
+        })
+      );
+
+      const pending = [];
+      let failedRequests = 0;
+
+      budgetResults.forEach((result) => {
+        if (result.status === "fulfilled") {
+          pending.push(...result.value);
+        } else {
+          failedRequests += 1;
+        }
+      });
+
+      pending.sort((a, b) => {
+        const dateA = getTimestamp(
+          a.created_at || a.expense_date
+        );
+
+        const dateB = getTimestamp(
+          b.created_at || b.expense_date
+        );
+
+        return dateB - dateA;
+      });
+
+      setApprovals(pending);
+
+      if (
+        budgetResults.length > 0 &&
+        failedRequests === budgetResults.length
+      ) {
+        throw new Error(
+          "Unable to retrieve budget records for the events. Please check your access and backend connection."
+        );
+      }
+
+      if (failedRequests > 0) {
+        setError(
+          `Some event budgets could not be loaded (${failedRequests} of ${budgetResults.length}). The displayed requests may be incomplete.`
+        );
+      }
+    } catch (err) {
+      setError(
+        err?.message ||
+        "Unable to load pending approvals."
+      );
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadApprovals();
+  }, [loadApprovals]);
+
+  const processApproval = async (expense, action) => {
+    const expenseId = String(
+      expense?.id ??
+      expense?._id ??
+      ""
+    );
+
+    if (!expenseId) {
+      setError("Unable to identify this expense.");
+      return;
+    }
+
+    let reason = "";
+
+    if (action === "reject") {
+      const enteredReason = window.prompt(
+        "Enter the reason for rejecting this expense:"
+      );
+
+      if (enteredReason === null) return;
+
+      reason = enteredReason.trim();
+
+      if (reason.length < 3) {
+        setError(
+          "Please enter a rejection reason of at least 3 characters."
+        );
+        return;
+      }
+
+      if (reason.length > 500) {
+        setError(
+          "The rejection reason cannot exceed 500 characters."
+        );
+        return;
+      }
+    }
+
+    const confirmed = window.confirm(
+      action === "approve"
+        ? `Approve "${expense.description || "this expense"}" for ${money(
+            expense.amount
+          )}?`
+        : `Reject "${expense.description || "this expense"}"?`
+    );
+
+    if (!confirmed) return;
+
+    setProcessingId(expenseId);
+    setError("");
+    setNotice("");
+
+    try {
+      const endpoint =
+        action === "approve"
+          ? `/budgets/expenses/${encodeURIComponent(
+              expenseId
+            )}/approve`
+          : `/budgets/expenses/${encodeURIComponent(
+              expenseId
+            )}/reject`;
+
+      await apiRequest(endpoint, {
+        method: "POST",
+
+        ...(action === "reject"
+          ? {
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({ reason }),
+            }
+          : {}),
+      });
+
+      setNotice(
+        action === "approve"
+          ? "Expense approved successfully."
+          : "Expense rejected successfully."
+      );
+
+      await loadApprovals(true);
+    } catch (err) {
+      setError(
+        err?.message ||
+        `Unable to ${action} this expense.`
+      );
+    } finally {
+      setProcessingId("");
+    }
+  };
+
+  if (!isAdmin(user)) {
+    return (
+      <section className="dashboard-panel">
+        <div className="dashboard-empty-state">
+          <ShieldCheck size={30} />
+
+          <h3>Admin access required</h3>
+
+          <p>
+            Only administrators can review and approve
+            event expenses.
+          </p>
+        </div>
+      </section>
+    );
+  }
+
+  const totalPending = approvals.reduce(
+    (sum, expense) =>
+      sum + (Number(expense.amount) || 0),
+    0
+  );
+
+  return (
+    <div className="dashboard-approvals-page">
+      <section className="dashboard-welcome">
+        <div>
+          <p className="dashboard-eyebrow">
+            ADMINISTRATION
+          </p>
+
+          <h2>Expense Approvals</h2>
+
+          <p>
+            Review pending event expenses and record
+            approval decisions.
+          </p>
+        </div>
+
+        <button
+          type="button"
+          className="dashboard-secondary-button"
+          onClick={() => loadApprovals(true)}
+          disabled={loading || refreshing}
+        >
+          <RefreshCw
+            size={16}
+            className={
+              loading || refreshing
+                ? "dashboard-spinning"
+                : ""
+            }
+          />
+          Refresh
+        </button>
+      </section>
+
+      {error && (
+        <div className="dashboard-alert" role="alert">
+          <AlertCircle size={18} />
+
+          <span>{error}</span>
+
+          <button
+            type="button"
+            onClick={() => setError("")}
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      {notice && (
+        <div
+          className="dashboard-alert dashboard-approval-success"
+          role="status"
+        >
+          <CheckCircle2 size={18} />
+
+          <span>{notice}</span>
+
+          <button
+            type="button"
+            onClick={() => setNotice("")}
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      <div className="dashboard-stat-grid">
+        <StatCard
+          icon={Clock3}
+          label="Pending expenses"
+          value={loading ? "…" : approvals.length}
+          helper="Awaiting administrator review"
+        />
+
+        <StatCard
+          icon={IndianRupee}
+          label="Pending amount"
+          value={loading ? "…" : money(totalPending)}
+          helper="Total value awaiting review"
+        />
+      </div>
+
+      <section className="dashboard-panel">
+        <div className="dashboard-panel-heading">
+          <div>
+            <h2>Pending expense requests</h2>
+
+            <p>
+              Approve valid expenses or reject them
+              with a reason.
+            </p>
+          </div>
+
+          <ShieldCheck size={22} />
+        </div>
+
+        {loading ? (
+          <div className="dashboard-empty-state">
+            <LoaderCircle
+              size={24}
+              className="dashboard-spinning"
+            />
+
+            <p>Loading pending expenses...</p>
+          </div>
+        ) : approvals.length === 0 ? (
+          <div className="dashboard-empty-state">
+            <CheckCircle2 size={30} />
+
+            <h3>No pending approvals</h3>
+
+            <p>
+              All currently retrieved event expenses
+              have been reviewed.
+            </p>
+          </div>
+        ) : (
+          <div className="dashboard-approval-list">
+            {approvals.map((expense, index) => {
+              const expenseId = String(
+                expense.id ??
+                expense._id ??
+                index
+              );
+
+              const busy = processingId === expenseId;
+
+              return (
+                <article
+                  className="dashboard-approval-card"
+                  key={expenseId}
+                >
+                  <div className="dashboard-approval-main">
+                    <div className="dashboard-approval-heading">
+                      <div>
+                        <span className="dashboard-eyebrow">
+                          {expense.event_name || "Event"}
+                        </span>
+
+                        <h3>
+                          {expense.description ||
+                            "Unnamed expense"}
+                        </h3>
+                      </div>
+
+                      <StatusBadge status="Pending" />
+                    </div>
+
+                    <div className="dashboard-approval-details">
+                      <span>
+                        <IndianRupee size={14} />
+                        {money(expense.amount)}
+                      </span>
+
+                      <span>
+                        <Package size={14} />
+                        {expense.category ||
+                          "Uncategorized"}
+                      </span>
+
+                      <span>
+                        <CalendarDays size={14} />
+                        Expense date:{" "}
+                        {formatDate(expense.expense_date)}
+                      </span>
+
+                      <span>
+                        <Clock3 size={14} />
+                        Event date:{" "}
+                        {formatDate(expense.event_date)}
+                      </span>
+                    </div>
+
+                    {expense.linked_item_name && (
+                      <p className="dashboard-approval-linked">
+                        Linked item:{" "}
+                        {expense.linked_item_type || "Item"}
+                        {" — "}
+                        {expense.linked_item_name}
+                      </p>
+                    )}
+
+                    {expense.notes && (
+                      <p className="dashboard-approval-notes">
+                        {expense.notes}
+                      </p>
+                    )}
+
+                    <p className="dashboard-approval-requester">
+                      Requested by:{" "}
+                      {expense.requested_by_name ||
+                        expense.requested_by ||
+                        "Not specified"}
+                    </p>
+                  </div>
+
+                  <div className="dashboard-approval-actions">
+                    <button
+                      type="button"
+                      className="dashboard-approve-button"
+                      disabled={Boolean(processingId)}
+                      onClick={() =>
+                        processApproval(expense, "approve")
+                      }
+                    >
+                      {busy ? (
+                        <LoaderCircle
+                          size={15}
+                          className="dashboard-spinning"
+                        />
+                      ) : (
+                        <CheckCircle2 size={15} />
+                      )}
+
+                      Approve
+                    </button>
+
+                    <button
+                      type="button"
+                      className="dashboard-reject-button"
+                      disabled={Boolean(processingId)}
+                      onClick={() =>
+                        processApproval(expense, "reject")
+                      }
+                    >
+                      <XCircle size={15} />
+                      Reject
+                    </button>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}
+
+/* =======================================================
+   DASHBOARD OVERVIEW
+======================================================= */
+
 function DashboardOverview({
   user,
   events,
@@ -459,6 +997,21 @@ function DashboardOverview({
 
   const nextEvent = upcomingEvents[0];
 
+  const modules = [
+    { label: "Events", icon: CalendarDays },
+    { label: "Venues", icon: DoorOpen },
+    { label: "Resources", icon: Package },
+    { label: "Scheduling", icon: CalendarPlus },
+    { label: "Attendance", icon: Users },
+    { label: "Budget", icon: Wallet },
+    { label: "Vendors", icon: Building2 },
+    { label: "Sponsorships", icon: Handshake },
+
+    ...(isAdmin(user)
+      ? [{ label: "Approvals", icon: ShieldCheck }]
+      : []),
+  ];
+
   return (
     <>
       <section className="dashboard-welcome">
@@ -476,8 +1029,8 @@ function DashboardOverview({
           </h2>
 
           <p>
-            Manage your events, venues, attendance, and
-            scheduling from one workspace.
+            Manage your events, venues, attendance,
+            and scheduling from one workspace.
           </p>
         </div>
 
@@ -494,6 +1047,7 @@ function DashboardOverview({
       {error && (
         <div className="dashboard-alert" role="alert">
           <AlertCircle size={18} />
+
           <span>{error}</span>
 
           <button
@@ -508,9 +1062,7 @@ function DashboardOverview({
       <div className="dashboard-section-heading">
         <div>
           <h2>Overview</h2>
-          <p>
-            Statistics calculated from your API data.
-          </p>
+          <p>Statistics calculated from your API data.</p>
         </div>
 
         <button
@@ -593,8 +1145,8 @@ function DashboardOverview({
               <h3>No upcoming events</h3>
 
               <p>
-                Events will appear here when the API returns
-                scheduled future events.
+                Events will appear here when the API
+                returns scheduled future events.
               </p>
             </div>
           ) : (
@@ -641,7 +1193,7 @@ function DashboardOverview({
                           <span className="dashboard-subtext">
                             {formatTime(
                               event?.time ??
-                                event?.start_time
+                              event?.start_time
                             )}
                           </span>
                         </td>
@@ -665,9 +1217,7 @@ function DashboardOverview({
 
         <MiniCalendar
           events={events}
-          onSelectDate={() =>
-            onNavigate("Scheduling")
-          }
+          onSelectDate={() => onNavigate("Scheduling")}
         />
       </div>
 
@@ -699,7 +1249,7 @@ function DashboardOverview({
                 <Clock3 size={16} />
                 {formatTime(
                   nextEvent?.time ??
-                    nextEvent?.start_time
+                  nextEvent?.start_time
                 )}
               </p>
 
@@ -723,56 +1273,23 @@ function DashboardOverview({
           <div className="dashboard-panel-heading">
             <div>
               <h2>Workspace modules</h2>
-              <p>
-                Open a module to manage its records.
-              </p>
+              <p>Open a module to manage its records.</p>
             </div>
 
             <Activity size={20} />
           </div>
 
           <div className="dashboard-module-list">
-            {[
-              {
-                label: "Events",
-                icon: CalendarDays,
-              },
-              {
-                label: "Venues",
-                icon: DoorOpen,
-              },
-              {
-                label: "Resources",
-                icon: Package,
-              },
-              {
-                label: "Scheduling",
-                icon: CalendarPlus,
-              },
-              {
-                label: "Attendance",
-                icon: Users,
-              },
-              {
-                label: "Budget",
-                icon: Wallet,
-              },
-              {
-                label: "Vendors",
-                icon: Building2,
-              },
-              {
-                label: "Sponsorships",
-                icon: Handshake,
-              },
-            ].map(({ label, icon: Icon }) => (
+            {modules.map(({ label, icon: Icon }) => (
               <button
                 type="button"
                 key={label}
                 onClick={() => onNavigate(label)}
               >
                 <Icon size={18} />
+
                 <strong>{label}</strong>
+
                 <ChevronRight size={17} />
               </button>
             ))}
@@ -791,6 +1308,10 @@ function DashboardOverview({
   );
 }
 
+/* =======================================================
+   MAIN DASHBOARD
+======================================================= */
+
 export default function Dashboard({
   user: userProp,
   onLogout,
@@ -808,73 +1329,100 @@ export default function Dashboard({
   });
 
   const [activePage, setActivePage] = useState("Dashboard");
+
   const [events, setEvents] = useState([]);
   const [venues, setVenues] = useState([]);
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
+  /* Keep user state synchronized with Auth.jsx */
+
   useEffect(() => {
-    if (userProp) {
+    if (userProp !== undefined) {
       setUser(userProp);
     }
   }, [userProp]);
+
+  /* Load dashboard data */
 
   const loadDashboardData = useCallback(async () => {
     setLoading(true);
     setError("");
 
-    try {
-      const [
-        eventsResponse,
-        venuesResponse,
-      ] = await Promise.all([
+    const [eventsResult, venuesResult] =
+      await Promise.allSettled([
         getEvents(),
         getVenues(),
       ]);
 
+    if (eventsResult.status === "fulfilled") {
       setEvents(
-        toArray(eventsResponse, [
+        toArray(eventsResult.value, [
           "events",
           "items",
         ])
       );
+    } else {
+      setEvents([]);
+    }
 
+    if (venuesResult.status === "fulfilled") {
       setVenues(
-        toArray(venuesResponse, [
+        toArray(venuesResult.value, [
           "venues",
           "items",
         ])
       );
-    } catch (err) {
-      setError(
-        err?.message ??
-          "Unable to load dashboard data."
-      );
-    } finally {
-      setLoading(false);
+    } else {
+      setVenues([]);
     }
+
+    const errors = [];
+
+    if (eventsResult.status === "rejected") {
+      errors.push(
+        eventsResult.reason?.message ||
+        "Unable to load events."
+      );
+    }
+
+    if (venuesResult.status === "rejected") {
+      errors.push(
+        venuesResult.reason?.message ||
+        "Unable to load venues."
+      );
+    }
+
+    if (errors.length > 0) {
+      setError(errors.join(" "));
+    }
+
+    setLoading(false);
   }, []);
 
   useEffect(() => {
     loadDashboardData();
   }, [loadDashboardData]);
 
+  /* Navigation */
+
   const handleNavigate = useCallback((page) => {
     setActivePage(page);
   }, []);
 
+  /* Logout */
+
   const handleLogout = useCallback(async () => {
-    // Auth.jsx owns logout when its callback is provided.
-    // Avoid calling logoutUser twice in that case.
     if (typeof onLogout === "function") {
-      onLogout();
+      await onLogout();
       return;
     }
 
     try {
       await logoutUser();
     } catch {
-      // Clear local credentials even if the API is unavailable.
+      // Local credentials are cleared below regardless.
     } finally {
       localStorage.removeItem("token");
       localStorage.removeItem("user");
@@ -887,6 +1435,8 @@ export default function Dashboard({
       window.location.assign("/");
     }
   }, [onLogout]);
+
+  /* Active page */
 
   let pageContent;
 
@@ -923,6 +1473,12 @@ export default function Dashboard({
       pageContent = <Sponsorships user={user} />;
       break;
 
+    case "Approvals":
+      pageContent = (
+        <ExpenseApprovals user={user} />
+      );
+      break;
+
     default:
       pageContent = (
         <DashboardOverview
@@ -936,6 +1492,8 @@ export default function Dashboard({
         />
       );
   }
+
+  /* Main layout */
 
   return (
     <div className="dashboard-app">
@@ -969,9 +1527,7 @@ export default function Dashboard({
               onClick={handleLogout}
             >
               {(
-                getUserName(user)
-                  .trim()
-                  .charAt(0) || "U"
+                getUserName(user).trim().charAt(0) || "U"
               ).toUpperCase()}
             </button>
           </div>

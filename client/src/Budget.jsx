@@ -1,4 +1,3 @@
-
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
@@ -26,6 +25,9 @@ import {
   Clock,
   List,
   ChevronDown,
+  ThumbsUp,
+  ThumbsDown,
+  ShieldCheck,
 } from "lucide-react";
 
 import { apiRequest, getEvents } from "./api";
@@ -68,7 +70,6 @@ const EMPTY_EXPENSE = {
   category: "Venue",
   amount: "",
   expense_date: getLocalDate(),
-  status: "Pending",
   notes: "",
   linked_item_type: "Other",
   linked_item_id: "",
@@ -81,7 +82,6 @@ function listFrom(response) {
   if (Array.isArray(response)) return response;
   if (Array.isArray(response?.events)) return response.events;
   if (Array.isArray(response?.data)) return response.data;
-
   return [];
 }
 
@@ -107,7 +107,6 @@ function errorText(error, fallback) {
 
 function normalizedStatus(status) {
   const value = String(status || "Pending").trim();
-
   return STATUSES.includes(value) ? value : "Pending";
 }
 
@@ -124,7 +123,7 @@ function dateLabel(value) {
 
   const parts = String(value).slice(0, 10).split("-");
 
-  if (parts.length !== 3) return value;
+  if (parts.length !== 3) return String(value);
 
   const [year, month, day] = parts;
 
@@ -158,8 +157,44 @@ function timeLabel(value) {
 
 function linkedItemKey(type, id) {
   if (!type || !id) return "";
-
   return `${String(type).toLowerCase()}:${String(id)}`;
+}
+
+/*
+ * The application stores its JWT in localStorage under "token".
+ * Decode only the payload to determine which approval controls to show.
+ * The backend remains responsible for enforcing authorization.
+ */
+function getCurrentUserRole() {
+  try {
+    const token = localStorage.getItem("token");
+    if (!token) return "";
+
+    const parts = token.split(".");
+    if (parts.length !== 3) return "";
+
+    const base64 = parts[1]
+      .replace(/-/g, "+")
+      .replace(/_/g, "/");
+
+    const padded = base64.padEnd(
+      base64.length + ((4 - (base64.length % 4)) % 4),
+      "="
+    );
+
+    const payload = JSON.parse(window.atob(padded));
+
+    return String(
+      payload?.role ??
+        payload?.user_role ??
+        payload?.user?.role ??
+        ""
+    )
+      .trim()
+      .toLowerCase();
+  } catch {
+    return "";
+  }
 }
 
 /* -------------------- Reusable components -------------------- */
@@ -233,6 +268,7 @@ export default function Budget() {
   const [savingBudget, setSavingBudget] = useState(false);
   const [savingExpense, setSavingExpense] = useState(false);
   const [deletingExpenseId, setDeletingExpenseId] = useState(null);
+  const [reviewingExpenseId, setReviewingExpenseId] = useState(null);
 
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -240,6 +276,12 @@ export default function Budget() {
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("All");
   const [showAllExpenses, setShowAllExpenses] = useState(false);
+
+  const currentRole = useMemo(() => getCurrentUserRole(), []);
+  const canReviewExpenses = [
+    "admin",
+    "administrator",
+  ].includes(currentRole);
 
   /* -------------------- Load events -------------------- */
 
@@ -275,10 +317,12 @@ export default function Budget() {
 
   const loadBudget = useCallback(async (eventId, options = {}) => {
     if (!eventId) {
+      requestSequence.current += 1;
       setEventInfo(null);
       setBudget(null);
       setExpenses([]);
       setBudgetInput("");
+      setLoadingBudget(false);
       return;
     }
 
@@ -300,7 +344,6 @@ export default function Budget() {
 
       setEventInfo(response?.event || null);
       setBudget(response?.budget || null);
-
       setExpenses(
         Array.isArray(response?.expenses) ? response.expenses : []
       );
@@ -334,10 +377,12 @@ export default function Budget() {
     if (selectedEventId) {
       loadBudget(selectedEventId);
     } else {
+      requestSequence.current += 1;
       setEventInfo(null);
       setBudget(null);
       setExpenses([]);
       setBudgetInput("");
+      setLoadingBudget(false);
     }
 
     setExpenseForm({
@@ -512,7 +557,6 @@ export default function Budget() {
 
     const sections = categoryEntries.map((item) => {
       const start = current;
-
       current += (item.amount / total) * 100;
 
       return `${item.color} ${start}% ${current}%`;
@@ -631,7 +675,6 @@ export default function Budget() {
         ? String(expense.expense_date).slice(0, 10)
         : getLocalDate(),
 
-      status: normalizedStatus(expense.status),
       notes: expense.notes || "",
       linked_item_type: expense.linked_item_type || "Other",
       linked_item_id: expense.linked_item_id
@@ -657,7 +700,6 @@ export default function Budget() {
     }
 
     const separatorIndex = value.indexOf(":");
-
     if (separatorIndex === -1) return;
 
     const type = value.slice(0, separatorIndex);
@@ -736,23 +778,30 @@ export default function Budget() {
       return;
     }
 
-    if (!STATUSES.includes(expenseForm.status)) {
-      setError("Select a valid expense status.");
-      return;
-    }
-
     if (expenseForm.notes.length > 1000) {
       setError("Notes cannot exceed 1000 characters.");
       return;
     }
 
-    if (!isEditing && expenseForm.linked_item_id) {
+    if (expenseForm.linked_item_id) {
       const selectedKey = linkedItemKey(
         expenseForm.linked_item_type,
         expenseForm.linked_item_id
       );
 
-      if (allocatedItemKeys.has(selectedKey)) {
+      const duplicateExpense = expenses.find((expense) => {
+        if (expenseIdOf(expense) === editingExpenseId) return false;
+        if (normalizedStatus(expense.status) === "Rejected") return false;
+
+        return (
+          linkedItemKey(
+            expense.linked_item_type,
+            expense.linked_item_id
+          ) === selectedKey
+        );
+      });
+
+      if (duplicateExpense) {
         setError(
           "This item already has an allocated expense. Edit its existing expense instead."
         );
@@ -765,7 +814,11 @@ export default function Budget() {
       category: expenseForm.category,
       amount,
       expense_date: expenseDate,
-      status: expenseForm.status,
+
+      // New expenses always enter the approval workflow as Pending.
+      // Existing status is preserved by the backend update endpoint.
+      status: "Pending",
+
       notes: expenseForm.notes.trim(),
 
       linked_item_type: expenseForm.linked_item_id
@@ -798,7 +851,7 @@ export default function Budget() {
       setNotice(
         isEditing
           ? "Expense updated successfully."
-          : "Expense added successfully."
+          : "Expense submitted for approval successfully."
       );
 
       resetExpenseForm();
@@ -813,6 +866,116 @@ export default function Budget() {
       );
     } finally {
       setSavingExpense(false);
+    }
+  };
+
+  /* -------------------- Approve expense -------------------- */
+
+  const approveExpense = async (expense) => {
+    const expenseId = expenseIdOf(expense);
+
+    if (!expenseId) {
+      setError("Unable to identify this expense.");
+      return;
+    }
+
+    if (!canReviewExpenses) {
+      setError("Only administrators can approve expenses.");
+      return;
+    }
+
+    if (normalizedStatus(expense.status) !== "Pending") {
+      setError("Only pending expenses can be approved.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Approve "${expense.description || "this expense"}" for ${money(
+        expense.amount
+      )}?`
+    );
+
+    if (!confirmed) return;
+
+    setReviewingExpenseId(expenseId);
+    setError("");
+    setNotice("");
+
+    try {
+      await apiRequest(
+        `/budgets/expenses/${encodeURIComponent(expenseId)}/approve`,
+        {
+          method: "POST",
+        }
+      );
+
+      await loadBudget(selectedEventId, { preserveNotice: true });
+      setNotice("Expense approved successfully.");
+    } catch (err) {
+      setError(errorText(err, "Unable to approve this expense."));
+    } finally {
+      setReviewingExpenseId(null);
+    }
+  };
+
+  /* -------------------- Reject expense -------------------- */
+
+  const rejectExpense = async (expense) => {
+    const expenseId = expenseIdOf(expense);
+
+    if (!expenseId) {
+      setError("Unable to identify this expense.");
+      return;
+    }
+
+    if (!canReviewExpenses) {
+      setError("Only administrators can reject expenses.");
+      return;
+    }
+
+    if (normalizedStatus(expense.status) !== "Pending") {
+      setError("Only pending expenses can be rejected.");
+      return;
+    }
+
+    const reason = window.prompt(
+      `Enter the reason for rejecting "${expense.description || "this expense"}":`
+    );
+
+    if (reason === null) return;
+
+    const trimmedReason = reason.trim();
+
+    if (!trimmedReason) {
+      setError("A rejection reason is required.");
+      return;
+    }
+
+    if (trimmedReason.length > 1000) {
+      setError("The rejection reason cannot exceed 1000 characters.");
+      return;
+    }
+
+    setReviewingExpenseId(expenseId);
+    setError("");
+    setNotice("");
+
+    try {
+      await apiRequest(
+        `/budgets/expenses/${encodeURIComponent(expenseId)}/reject`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ reason: trimmedReason }),
+        }
+      );
+
+      await loadBudget(selectedEventId, { preserveNotice: true });
+      setNotice("Expense rejected successfully.");
+    } catch (err) {
+      setError(errorText(err, "Unable to reject this expense."));
+    } finally {
+      setReviewingExpenseId(null);
     }
   };
 
@@ -846,19 +1009,14 @@ export default function Budget() {
         }
       );
 
-      // If the deleted expense was open in the edit form,
-      // return the form to Add mode.
       if (editingExpenseId === expenseId) {
         resetExpenseForm();
       }
 
       await loadBudget(selectedEventId, { preserveNotice: true });
-
       setNotice("Expense deleted successfully.");
     } catch (err) {
-      setError(
-        errorText(err, "Unable to delete the expense.")
-      );
+      setError(errorText(err, "Unable to delete the expense."));
     } finally {
       setDeletingExpenseId(null);
     }
@@ -986,10 +1144,11 @@ export default function Budget() {
                 EVENT DETAILS · READ ONLY
               </p>
 
-              <h2>{eventInfo.name}</h2>
+              <h2>{eventInfo.name || eventInfo.title || "Event"}</h2>
 
               <p className="budget-banner-meta">
-                {eventInfo.event_type} · {eventInfo.status}
+                {eventInfo.event_type || "Event"} ·{" "}
+                {eventInfo.status || "Status unavailable"}
               </p>
             </div>
 
@@ -998,9 +1157,13 @@ export default function Budget() {
                 <CalendarDays size={16} />
                 <span>Event date</span>
                 <strong>
-                  {dateLabel(eventInfo.event_date)}
+                  {dateLabel(
+                    eventInfo.event_date ||
+                      eventInfo.date
+                  )}
                   {eventInfo.end_date &&
-                    eventInfo.end_date !== eventInfo.event_date &&
+                    eventInfo.end_date !==
+                      (eventInfo.event_date || eventInfo.date) &&
                     ` – ${dateLabel(eventInfo.end_date)}`}
                 </strong>
               </div>
@@ -1275,6 +1438,10 @@ export default function Budget() {
                         const expenseId = expenseIdOf(expense);
                         const isDeleting =
                           deletingExpenseId === expenseId;
+                        const isReviewing =
+                          reviewingExpenseId === expenseId;
+                        const isPending = status === "Pending";
+                        const approval = expense.approval || {};
 
                         return (
                           <tr
@@ -1298,6 +1465,22 @@ export default function Budget() {
                                   {expense.linked_item_name}
                                 </span>
                               )}
+
+                              {status === "Rejected" &&
+                                approval.rejection_reason && (
+                                  <span
+                                    className="budget-expense-link"
+                                    title={approval.rejection_reason}
+                                  >
+                                    Reason: {approval.rejection_reason}
+                                  </span>
+                                )}
+
+                              {approval.reviewed_by_name && (
+                                <span className="budget-expense-link">
+                                  Reviewed by: {approval.reviewed_by_name}
+                                </span>
+                              )}
                             </td>
 
                             <td className="is-nowrap">
@@ -1318,6 +1501,45 @@ export default function Budget() {
 
                             <td className="is-right">
                               <div className="budget-row-actions">
+                                {canReviewExpenses && isPending && (
+                                  <>
+                                    <button
+                                      type="button"
+                                      className="budget-icon-button"
+                                      onClick={() => approveExpense(expense)}
+                                      title="Approve expense"
+                                      aria-label="Approve expense"
+                                      disabled={
+                                        Boolean(reviewingExpenseId) ||
+                                        Boolean(deletingExpenseId)
+                                      }
+                                    >
+                                      {isReviewing ? (
+                                        <LoaderCircle
+                                          size={14}
+                                          className="budget-spin"
+                                        />
+                                      ) : (
+                                        <ThumbsUp size={13} />
+                                      )}
+                                    </button>
+
+                                    <button
+                                      type="button"
+                                      className="budget-icon-button"
+                                      onClick={() => rejectExpense(expense)}
+                                      title="Reject expense"
+                                      aria-label="Reject expense"
+                                      disabled={
+                                        Boolean(reviewingExpenseId) ||
+                                        Boolean(deletingExpenseId)
+                                      }
+                                    >
+                                      <ThumbsDown size={13} />
+                                    </button>
+                                  </>
+                                )}
+
                                 <button
                                   type="button"
                                   className="budget-icon-button"
@@ -1326,6 +1548,7 @@ export default function Budget() {
                                   aria-label="Edit expense"
                                   disabled={
                                     Boolean(deletingExpenseId) ||
+                                    Boolean(reviewingExpenseId) ||
                                     savingExpense
                                   }
                                 >
@@ -1340,6 +1563,7 @@ export default function Budget() {
                                   aria-label="Delete expense"
                                   disabled={
                                     Boolean(deletingExpenseId) ||
+                                    Boolean(reviewingExpenseId) ||
                                     savingExpense
                                   }
                                 >
@@ -1372,6 +1596,14 @@ export default function Budget() {
                   <strong>Total: {money(totalExpenses)}</strong>
                 </div>
               )}
+
+              {canReviewExpenses && (
+                <div className="budget-form-note">
+                  <ShieldCheck size={14} />
+                  Administrator review: approve or reject pending expenses
+                  using the action icons.
+                </div>
+              )}
             </Panel>
 
             <Panel
@@ -1382,8 +1614,8 @@ export default function Budget() {
               <form className="budget-form" onSubmit={saveExpense}>
                 <p className="budget-form-note">
                   {editingExpenseId
-                    ? "Update the details of this existing expense."
-                    : "Add an expense for an item that has not yet been allocated to an expense."}
+                    ? "Update the details of this existing expense. Its approval status is managed separately."
+                    : "New expenses are submitted with Pending status for administrator review."}
                 </p>
 
                 <FormField
@@ -1452,19 +1684,22 @@ export default function Budget() {
                   </select>
                 </FormField>
 
-                <FormField label="Status">
-                  <select
-                    value={expenseForm.status}
-                    onChange={(event) =>
-                      updateExpenseField("status", event.target.value)
+                <FormField label="Approval Status">
+                  <input
+                    type="text"
+                    value={
+                      editingExpenseId
+                        ? normalizedStatus(
+                            expenses.find(
+                              (item) =>
+                                expenseIdOf(item) === editingExpenseId
+                            )?.status
+                          )
+                        : "Pending"
                     }
-                  >
-                    {STATUSES.map((status) => (
-                      <option key={status} value={status}>
-                        {status}
-                      </option>
-                    ))}
-                  </select>
+                    readOnly
+                    disabled
+                  />
                 </FormField>
 
                 <FormField label="Amount (₹)">
@@ -1527,6 +1762,7 @@ export default function Budget() {
                     disabled={
                       savingExpense ||
                       Boolean(deletingExpenseId) ||
+                      Boolean(reviewingExpenseId) ||
                       loadingBudget ||
                       !budgetReady
                     }
@@ -1543,7 +1779,7 @@ export default function Budget() {
                       ? "Saving..."
                       : editingExpenseId
                         ? "Update Expense"
-                        : "Add Expense"}
+                        : "Submit Expense"}
                   </button>
                 </div>
               </form>

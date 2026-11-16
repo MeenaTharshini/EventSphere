@@ -9,7 +9,6 @@ import {
   Trash2,
   X,
   IndianRupee,
-  TrendingUp,
   Wallet,
   Users,
   AlertCircle,
@@ -20,6 +19,8 @@ import {
   Mail,
   Phone,
   FileText,
+  TrendingUp,
+  Building2,
 } from "lucide-react";
 
 import {
@@ -61,36 +62,75 @@ const currency = (amount) =>
     style: "currency",
     currency: "INR",
     maximumFractionDigits: 2,
-  }).format(Number(amount || 0));
+  }).format(Number.isFinite(Number(amount)) ? Number(amount) : 0);
 
 const getEventId = (event) =>
   event?._id || event?.id || event?.event_id || "";
 
 const getEventName = (event) =>
-  event?.name ||
-  event?.title ||
-  event?.event_name ||
-  "Untitled event";
+  event?.name || event?.title || event?.event_name || "Untitled event";
+
+const getSponsorshipId = (item) =>
+  String(item?.id || item?._id || item?.sponsorship_id || "");
 
 const extractArray = (response, key) => {
   if (Array.isArray(response)) return response;
   if (Array.isArray(response?.[key])) return response[key];
+  if (Array.isArray(response?.items)) return response.items;
   if (Array.isArray(response?.data)) return response.data;
   if (Array.isArray(response?.data?.[key])) return response.data[key];
+  if (Array.isArray(response?.data?.items)) return response.data.items;
   return [];
 };
 
-const getErrorMessage = (error) => {
-  if (typeof error === "string") return error;
+const getErrorMessage = (error) =>
+  error?.response?.data?.detail ||
+  error?.response?.data?.message ||
+  error?.detail ||
+  error?.message ||
+  "Something went wrong. Please try again.";
 
-  return (
-    error?.response?.data?.detail ||
-    error?.response?.data?.message ||
-    error?.detail ||
-    error?.message ||
-    "Something went wrong. Please try again."
-  );
+const getUserRole = (user) =>
+  String(user?.role || user?.user?.role || user?.activeRole || "")
+    .trim()
+    .toLowerCase();
+
+const getPaymentStatus = (item) => {
+  if (item.status === "Cancelled") return "Cancelled";
+
+  const pledged = Number(item.pledged_amount || 0);
+  const received = Number(item.amount_received || 0);
+
+  if (pledged > 0 && received >= pledged) return "Paid";
+  if (received > 0) return "Partially Paid";
+
+  return item.status || "Pending";
 };
+
+const getStatusClass = (status) => {
+  switch (status) {
+    case "Paid":
+      return "paid";
+    case "Partially Paid":
+      return "partial";
+    case "Confirmed":
+      return "confirmed";
+    case "Cancelled":
+      return "cancelled";
+    default:
+      return "pending";
+  }
+};
+
+const getStatusIcon = (status) => {
+  if (status === "Paid") return <CheckCircle2 size={14} />;
+  if (status === "Cancelled") return <X size={14} />;
+  if (status === "Partially Paid") return <TrendingUp size={14} />;
+  return <Clock size={14} />;
+};
+
+const getTierClass = (tier) =>
+  String(tier || "Custom").toLowerCase().replace(/\s+/g, "-");
 
 function Sponsorships({ user }) {
   const [events, setEvents] = useState([]);
@@ -106,14 +146,13 @@ function Sponsorships({ user }) {
 
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState(null);
-  const [form, setForm] = useState(INITIAL_FORM);
+  const [form, setForm] = useState({ ...INITIAL_FORM });
 
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
-  const isManager = ["admin", "administrator", "organizer"].includes(
-    String(user?.role || "").toLowerCase()
-  );
+  const role = getUserRole(user);
+  const isManager = ["admin", "administrator", "organizer"].includes(role);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -126,9 +165,7 @@ function Sponsorships({ user }) {
       ]);
 
       setEvents(extractArray(eventResponse, "events"));
-      setSponsorships(
-        extractArray(sponsorshipResponse, "sponsorships")
-      );
+      setSponsorships(extractArray(sponsorshipResponse, "sponsorships"));
     } catch (err) {
       setError(getErrorMessage(err));
     } finally {
@@ -148,13 +185,16 @@ function Sponsorships({ user }) {
         !searchTerm ||
         String(item.sponsor_name || "").toLowerCase().includes(searchTerm) ||
         String(item.event_name || "").toLowerCase().includes(searchTerm) ||
-        String(item.contact_name || "").toLowerCase().includes(searchTerm);
+        String(item.contact_name || "").toLowerCase().includes(searchTerm) ||
+        String(item.tier || "").toLowerCase().includes(searchTerm);
 
       const matchesEvent =
-        eventFilter === "all" || String(item.event_id) === eventFilter;
+        eventFilter === "all" ||
+        String(item.event_id || "") === eventFilter;
 
       const matchesStatus =
-        statusFilter === "all" || item.status === statusFilter;
+        statusFilter === "all" ||
+        getPaymentStatus(item) === statusFilter;
 
       return matchesSearch && matchesEvent && matchesStatus;
     });
@@ -206,7 +246,7 @@ function Sponsorships({ user }) {
   };
 
   const openEditForm = (item) => {
-    setEditingId(item.id);
+    setEditingId(getSponsorshipId(item));
 
     setForm({
       event_id: String(item.event_id || ""),
@@ -232,7 +272,8 @@ function Sponsorships({ user }) {
 
     setShowForm(false);
     setEditingId(null);
-    setForm(INITIAL_FORM);
+    setForm({ ...INITIAL_FORM });
+    setError("");
   };
 
   const handleChange = (event) => {
@@ -242,11 +283,12 @@ function Sponsorships({ user }) {
       ...previous,
       [name]: value,
     }));
+
+    setError("");
   };
 
   const handleSubmit = async (event) => {
     event.preventDefault();
-
     setError("");
     setSuccess("");
 
@@ -305,7 +347,7 @@ function Sponsorships({ user }) {
 
       setShowForm(false);
       setEditingId(null);
-      setForm(INITIAL_FORM);
+      setForm({ ...INITIAL_FORM });
 
       await loadData();
     } catch (err) {
@@ -316,51 +358,35 @@ function Sponsorships({ user }) {
   };
 
   const handleDelete = async (item) => {
+    const id = getSponsorshipId(item);
+    if (!id) {
+      setError("Unable to identify this sponsorship record.");
+      return;
+    }
+
     const confirmed = window.confirm(
       `Delete the sponsorship from "${item.sponsor_name}"? This action cannot be undone.`
     );
 
     if (!confirmed) return;
 
-    setDeletingId(item.id);
+    setDeletingId(id);
     setError("");
     setSuccess("");
 
     try {
-      await deleteSponsorship(item.id);
-
-      setSuccess("Sponsorship deleted successfully.");
+      await deleteSponsorship(id);
 
       setSponsorships((previous) =>
-        previous.filter((record) => record.id !== item.id)
+        previous.filter((record) => getSponsorshipId(record) !== id)
       );
+
+      setSuccess("Sponsorship deleted successfully.");
     } catch (err) {
       setError(getErrorMessage(err));
     } finally {
       setDeletingId(null);
     }
-  };
-
-  const getPaymentStatusClass = (status) => {
-    switch (status) {
-      case "Paid":
-        return "paid";
-      case "Partially Paid":
-        return "partial";
-      case "Confirmed":
-        return "confirmed";
-      case "Cancelled":
-        return "cancelled";
-      default:
-        return "pending";
-    }
-  };
-
-  const getStatusIcon = (status) => {
-    if (status === "Paid") return <CheckCircle2 size={14} />;
-    if (status === "Cancelled") return <X size={14} />;
-    if (status === "Partially Paid") return <TrendingUp size={14} />;
-    return <Clock size={14} />;
   };
 
   const getDerivedStatus = () => {
@@ -374,14 +400,14 @@ function Sponsorships({ user }) {
     return form.status;
   };
 
-  const totalVisible = filteredSponsorships.length;
+  const visibleCount = filteredSponsorships.length;
 
   if (!isManager) {
     return (
       <div className="sponsorship-page">
-        <div className="sponsorship-empty-state">
+        <div className="sponsorship-empty">
           <AlertCircle size={34} />
-          <h2>Access restricted</h2>
+          <h3>Access restricted</h3>
           <p>Only organizers and administrators can manage sponsorships.</p>
         </div>
       </div>
@@ -390,16 +416,14 @@ function Sponsorships({ user }) {
 
   return (
     <div className="sponsorship-page">
-      {/* PAGE HEADER */}
-      <div className="sponsorship-header">
+      {/* Page heading */}
+      <div className="sponsorship-page-header">
         <div>
-          <div className="sponsorship-eyebrow">
-            <Handshake size={15} />
+          <p className="sponsorship-eyebrow">
+            <Handshake size={14} />
             EVENT MANAGEMENT
-          </div>
-
-          <h1>Sponsorship Management</h1>
-
+          </p>
+          <h2>Sponsorship Management</h2>
           <p>
             Manage sponsors, track pledged contributions, and monitor
             payments across your events.
@@ -409,32 +433,39 @@ function Sponsorships({ user }) {
         <div className="sponsorship-header-actions">
           <button
             type="button"
-            className="sponsorship-btn sponsorship-btn-secondary"
+            className="sponsorship-secondary-button"
             onClick={loadData}
             disabled={loading}
           >
-            <RefreshCw size={16} className={loading ? "sp-spin" : ""} />
+            <RefreshCw
+              size={15}
+              className={loading ? "sponsorship-spin" : ""}
+            />
             Refresh
           </button>
 
           <button
             type="button"
-            className="sponsorship-btn sponsorship-btn-primary"
+            className="sponsorship-primary-button"
             onClick={openCreateForm}
             disabled={events.length === 0}
           >
-            <Plus size={17} />
+            <Plus size={16} />
             Add Sponsor
           </button>
         </div>
       </div>
 
-      {/* ALERTS */}
+      {/* Alerts */}
       {error && !showForm && (
         <div className="sponsorship-alert sponsorship-alert-error">
-          <AlertCircle size={17} />
+          <AlertCircle size={16} />
           <span>{error}</span>
-          <button type="button" onClick={() => setError("")}>
+          <button
+            type="button"
+            onClick={() => setError("")}
+            aria-label="Dismiss error"
+          >
             <X size={16} />
           </button>
         </div>
@@ -442,22 +473,26 @@ function Sponsorships({ user }) {
 
       {success && (
         <div className="sponsorship-alert sponsorship-alert-success">
-          <CheckCircle2 size={17} />
+          <CheckCircle2 size={16} />
           <span>{success}</span>
-          <button type="button" onClick={() => setSuccess("")}>
+          <button
+            type="button"
+            onClick={() => setSuccess("")}
+            aria-label="Dismiss message"
+          >
             <X size={16} />
           </button>
         </div>
       )}
 
-      {/* SUMMARY CARDS */}
+      {/* Summary cards */}
       <div className="sponsorship-stats-grid">
         <div className="sponsorship-stat-card">
           <div className="sponsorship-stat-icon sponsors-icon">
-            <Users size={20} />
+            <Users size={19} />
           </div>
-          <div>
-            <span className="sponsorship-stat-label">Active Sponsors</span>
+          <div className="sponsorship-stat-content">
+            <span>Active Sponsors</span>
             <strong>{summary.sponsors}</strong>
             <small>Excluding cancelled records</small>
           </div>
@@ -465,10 +500,10 @@ function Sponsorships({ user }) {
 
         <div className="sponsorship-stat-card">
           <div className="sponsorship-stat-icon pledged-icon">
-            <Handshake size={20} />
+            <Handshake size={19} />
           </div>
-          <div>
-            <span className="sponsorship-stat-label">Total Pledged</span>
+          <div className="sponsorship-stat-content">
+            <span>Total Pledged</span>
             <strong>{currency(summary.totalPledged)}</strong>
             <small>Committed sponsorship value</small>
           </div>
@@ -476,10 +511,10 @@ function Sponsorships({ user }) {
 
         <div className="sponsorship-stat-card">
           <div className="sponsorship-stat-icon received-icon">
-            <Wallet size={20} />
+            <Wallet size={19} />
           </div>
-          <div>
-            <span className="sponsorship-stat-label">Amount Received</span>
+          <div className="sponsorship-stat-content">
+            <span>Amount Received</span>
             <strong>{currency(summary.totalReceived)}</strong>
             <small>Payments collected</small>
           </div>
@@ -487,20 +522,20 @@ function Sponsorships({ user }) {
 
         <div className="sponsorship-stat-card">
           <div className="sponsorship-stat-icon outstanding-icon">
-            <IndianRupee size={20} />
+            <IndianRupee size={19} />
           </div>
-          <div>
-            <span className="sponsorship-stat-label">Outstanding</span>
+          <div className="sponsorship-stat-content">
+            <span>Outstanding</span>
             <strong>{currency(summary.outstanding)}</strong>
             <small>Pending collection</small>
           </div>
         </div>
       </div>
 
-      {/* FILTERS */}
+      {/* Search and filters */}
       <div className="sponsorship-toolbar">
         <div className="sponsorship-search">
-          <Search size={17} />
+          <Search size={16} />
           <input
             type="text"
             placeholder="Search sponsor, contact or event..."
@@ -519,10 +554,11 @@ function Sponsorships({ user }) {
         </div>
 
         <div className="sponsorship-filter">
-          <CalendarDays size={16} />
+          <CalendarDays size={15} />
           <select
             value={eventFilter}
             onChange={(event) => setEventFilter(event.target.value)}
+            aria-label="Filter by event"
           >
             <option value="all">All events</option>
             {events.map((event) => {
@@ -539,10 +575,11 @@ function Sponsorships({ user }) {
         </div>
 
         <div className="sponsorship-filter">
-          <Filter size={16} />
+          <Filter size={15} />
           <select
             value={statusFilter}
             onChange={(event) => setStatusFilter(event.target.value)}
+            aria-label="Filter by payment status"
           >
             <option value="all">All statuses</option>
             {STATUSES.map((status) => (
@@ -554,28 +591,28 @@ function Sponsorships({ user }) {
         </div>
 
         <span className="sponsorship-result-count">
-          {totalVisible} {totalVisible === 1 ? "record" : "records"}
+          {visibleCount} {visibleCount === 1 ? "record" : "records"}
         </span>
       </div>
 
-      {/* SPONSORSHIP TABLE */}
-      <section className="sponsorship-table-section">
+      {/* Sponsorship cards */}
+      <section className="sponsorship-records-section">
         <div className="sponsorship-section-heading">
           <div>
-            <h2>Sponsorship Records</h2>
+            <h3>Sponsorship Records</h3>
             <p>View and manage contributions from your sponsors.</p>
           </div>
         </div>
 
         {loading ? (
           <div className="sponsorship-loading">
-            <RefreshCw size={23} className="sp-spin" />
+            <RefreshCw size={22} className="sponsorship-spin" />
             <span>Loading sponsorship records...</span>
           </div>
         ) : filteredSponsorships.length === 0 ? (
-          <div className="sponsorship-empty-state">
+          <div className="sponsorship-empty">
             <div className="sponsorship-empty-icon">
-              <Handshake size={30} />
+              <Handshake size={28} />
             </div>
             <h3>No sponsorship records found</h3>
             <p>
@@ -587,125 +624,156 @@ function Sponsorships({ user }) {
             {sponsorships.length === 0 && (
               <button
                 type="button"
-                className="sponsorship-btn sponsorship-btn-primary"
+                className="sponsorship-primary-button"
                 onClick={openCreateForm}
                 disabled={events.length === 0}
               >
-                <Plus size={16} />
+                <Plus size={15} />
                 Add First Sponsor
               </button>
             )}
           </div>
         ) : (
-          <div className="sponsorship-table-wrapper">
-            <table className="sponsorship-table">
-              <thead>
-                <tr>
-                  <th>SPONSOR</th>
-                  <th>EVENT</th>
-                  <th>TIER</th>
-                  <th>PLEDGED</th>
-                  <th>RECEIVED</th>
-                  <th>BALANCE</th>
-                  <th>STATUS</th>
-                  <th>ACTIONS</th>
-                </tr>
-              </thead>
+          <div className="sponsorship-grid">
+            {filteredSponsorships.map((item) => {
+              const id = getSponsorshipId(item);
+              const pledged = Number(item.pledged_amount || 0);
+              const received = Number(item.amount_received || 0);
+              const balance = Math.max(pledged - received, 0);
+              const status = getPaymentStatus(item);
+              const progress =
+                pledged > 0
+                  ? Math.min((received / pledged) * 100, 100)
+                  : 0;
 
-              <tbody>
-                {filteredSponsorships.map((item) => {
-                  const pledged = Number(item.pledged_amount || 0);
-                  const received = Number(item.amount_received || 0);
-                  const balance = Math.max(pledged - received, 0);
-                  const status = item.status || "Pending";
+              return (
+                <article className="sponsorship-card" key={id}>
+                  <div className="sponsorship-card-top">
+                    <div className="sponsorship-sponsor-identity">
+                      <div className="sponsorship-avatar">
+                        {(item.sponsor_name || "S")
+                          .trim()
+                          .charAt(0)
+                          .toUpperCase()}
+                      </div>
 
-                  return (
-                    <tr key={item.id}>
-                      <td>
-                        <div className="sponsorship-sponsor-cell">
-                          <div className="sponsorship-avatar">
-                            {(item.sponsor_name || "S")
-                              .trim()
-                              .charAt(0)
-                              .toUpperCase()}
-                          </div>
-
-                          <div>
-                            <strong>{item.sponsor_name}</strong>
-                            <span>{item.contact_name || "No contact person"}</span>
-                          </div>
-                        </div>
-                      </td>
-
-                      <td>
-                        <span className="sponsorship-event-name">
-                          {item.event_name || "Event"}
+                      <div className="sponsorship-sponsor-heading">
+                        <h4>{item.sponsor_name || "Unnamed sponsor"}</h4>
+                        <span>
+                          {item.contact_name || "No contact person"}
                         </span>
-                      </td>
+                      </div>
+                    </div>
 
-                      <td>
-                        <span className={`sponsorship-tier tier-${String(item.tier || "custom").toLowerCase()}`}>
-                          {item.tier || "Custom"}
-                        </span>
-                      </td>
+                    <span
+                      className={`sponsorship-status ${getStatusClass(status)}`}
+                    >
+                      {getStatusIcon(status)}
+                      {status}
+                    </span>
+                  </div>
 
-                      <td className="sponsorship-money">
-                        {currency(pledged)}
-                      </td>
+                  <div className="sponsorship-card-event">
+                    <Building2 size={14} />
+                    <span>{item.event_name || "Event"}</span>
+                  </div>
 
-                      <td className="sponsorship-money received-amount">
+                  <div className="sponsorship-card-meta">
+                    <span
+                      className={`sponsorship-tier tier-${getTierClass(
+                        item.tier
+                      )}`}
+                    >
+                      {item.tier || "Custom"} Sponsor
+                    </span>
+                    {item.contact_email && (
+                      <span className="sponsorship-contact">
+                        <Mail size={13} />
+                        {item.contact_email}
+                      </span>
+                    )}
+                    {item.contact_phone && (
+                      <span className="sponsorship-contact">
+                        <Phone size={13} />
+                        {item.contact_phone}
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="sponsorship-card-financials">
+                    <div>
+                      <span>Pledged</span>
+                      <strong>{currency(pledged)}</strong>
+                    </div>
+                    <div>
+                      <span>Received</span>
+                      <strong className="received-value">
                         {currency(received)}
-                      </td>
-
-                      <td className="sponsorship-money balance-amount">
+                      </strong>
+                    </div>
+                    <div>
+                      <span>Balance</span>
+                      <strong className="balance-value">
                         {currency(balance)}
-                      </td>
+                      </strong>
+                    </div>
+                  </div>
 
-                      <td>
-                        <span
-                          className={`sponsorship-status ${getPaymentStatusClass(status)}`}
-                        >
-                          {getStatusIcon(status)}
-                          {status}
-                        </span>
-                      </td>
+                  <div className="sponsorship-progress">
+                    <div className="sponsorship-progress-label">
+                      <span>Payment progress</span>
+                      <strong>{Math.round(progress)}%</strong>
+                    </div>
+                    <div className="sponsorship-progress-track">
+                      <div
+                        className="sponsorship-progress-fill"
+                        style={{ width: `${progress}%` }}
+                      />
+                    </div>
+                  </div>
 
-                      <td>
-                        <div className="sponsorship-row-actions">
-                          <button
-                            type="button"
-                            className="sponsorship-icon-btn edit-action"
-                            title="Edit sponsorship"
-                            onClick={() => openEditForm(item)}
-                          >
-                            <Pencil size={15} />
-                          </button>
+                  {item.benefits && (
+                    <div className="sponsorship-card-description">
+                      <FileText size={14} />
+                      <p>{item.benefits}</p>
+                    </div>
+                  )}
 
-                          <button
-                            type="button"
-                            className="sponsorship-icon-btn delete-action"
-                            title="Delete sponsorship"
-                            onClick={() => handleDelete(item)}
-                            disabled={deletingId === item.id}
-                          >
-                            {deletingId === item.id ? (
-                              <RefreshCw size={15} className="sp-spin" />
-                            ) : (
-                              <Trash2 size={15} />
-                            )}
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                  <div className="sponsorship-card-actions">
+                    <button
+                      type="button"
+                      className="sponsorship-secondary-button"
+                      onClick={() => openEditForm(item)}
+                    >
+                      <Pencil size={14} />
+                      Edit
+                    </button>
+
+                    <button
+                      type="button"
+                      className="sponsorship-danger-button"
+                      onClick={() => handleDelete(item)}
+                      disabled={deletingId === id}
+                    >
+                      {deletingId === id ? (
+                        <RefreshCw
+                          size={14}
+                          className="sponsorship-spin"
+                        />
+                      ) : (
+                        <Trash2 size={14} />
+                      )}
+                      Delete
+                    </button>
+                  </div>
+                </article>
+              );
+            })}
           </div>
         )}
       </section>
 
-      {/* ADD / EDIT FORM */}
+      {/* Add / edit modal */}
       {showForm && (
         <div
           className="sponsorship-modal-backdrop"
@@ -719,18 +787,16 @@ function Sponsorships({ user }) {
             aria-modal="true"
             aria-labelledby="sponsorship-form-title"
           >
-            <div className="sponsorship-modal-header">
+            <div className="sponsorship-modal-heading">
               <div>
-                <span className="sponsorship-eyebrow">
+                <p className="sponsorship-eyebrow">
                   <Handshake size={14} />
                   SPONSORSHIP DETAILS
-                </span>
+                </p>
                 <h2 id="sponsorship-form-title">
                   {editingId ? "Edit Sponsorship" : "Add New Sponsor"}
                 </h2>
-                <p>
-                  Enter sponsor information and contribution details.
-                </p>
+                <p>Enter sponsor information and contribution details.</p>
               </div>
 
               <button
@@ -740,7 +806,7 @@ function Sponsorships({ user }) {
                 disabled={saving}
                 aria-label="Close form"
               >
-                <X size={20} />
+                <X size={18} />
               </button>
             </div>
 
@@ -806,9 +872,7 @@ function Sponsorships({ user }) {
                   </label>
 
                   <label className="sponsorship-field">
-                    <span>
-                      <Mail size={14} /> Contact email
-                    </span>
+                    <span><Mail size={13} /> Contact email</span>
                     <input
                       type="email"
                       name="contact_email"
@@ -819,9 +883,7 @@ function Sponsorships({ user }) {
                   </label>
 
                   <label className="sponsorship-field">
-                    <span>
-                      <Phone size={14} /> Contact phone
-                    </span>
+                    <span><Phone size={13} /> Contact phone</span>
                     <input
                       type="tel"
                       name="contact_phone"
@@ -875,7 +937,7 @@ function Sponsorships({ user }) {
                   <label className="sponsorship-field">
                     <span>Pledged amount (₹) <b>*</b></span>
                     <div className="sponsorship-input-with-icon">
-                      <IndianRupee size={16} />
+                      <IndianRupee size={15} />
                       <input
                         type="number"
                         name="pledged_amount"
@@ -892,7 +954,7 @@ function Sponsorships({ user }) {
                   <label className="sponsorship-field">
                     <span>Amount received (₹)</span>
                     <div className="sponsorship-input-with-icon">
-                      <IndianRupee size={16} />
+                      <IndianRupee size={15} />
                       <input
                         type="number"
                         name="amount_received"
@@ -910,7 +972,9 @@ function Sponsorships({ user }) {
                   <div>
                     <span>Current payment status</span>
                     <strong
-                      className={`sponsorship-status ${getPaymentStatusClass(getDerivedStatus())}`}
+                      className={`sponsorship-status ${getStatusClass(
+                        getDerivedStatus()
+                      )}`}
                     >
                       {getDerivedStatus()}
                     </strong>
@@ -936,9 +1000,7 @@ function Sponsorships({ user }) {
 
                 <div className="sponsorship-form-grid">
                   <label className="sponsorship-field full-width">
-                    <span>
-                      <FileText size={14} /> Sponsorship benefits
-                    </span>
+                    <span><FileText size={13} /> Sponsorship benefits</span>
                     <textarea
                       name="benefits"
                       value={form.benefits}
@@ -963,10 +1025,10 @@ function Sponsorships({ user }) {
                 </div>
               </div>
 
-              <div className="sponsorship-modal-footer">
+              <div className="sponsorship-form-actions">
                 <button
                   type="button"
-                  className="sponsorship-btn sponsorship-btn-secondary"
+                  className="sponsorship-secondary-button"
                   onClick={closeForm}
                   disabled={saving}
                 >
@@ -975,17 +1037,20 @@ function Sponsorships({ user }) {
 
                 <button
                   type="submit"
-                  className="sponsorship-btn sponsorship-btn-primary"
+                  className="sponsorship-primary-button"
                   disabled={saving}
                 >
                   {saving ? (
                     <>
-                      <RefreshCw size={16} className="sp-spin" />
+                      <RefreshCw
+                        size={15}
+                        className="sponsorship-spin"
+                      />
                       Saving...
                     </>
                   ) : (
                     <>
-                      <CheckCircle2 size={16} />
+                      <CheckCircle2 size={15} />
                       {editingId ? "Save Changes" : "Create Sponsorship"}
                     </>
                   )}

@@ -1,14 +1,10 @@
+
 from datetime import datetime, date, timezone
 from typing import Literal, Optional
 
 from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import (
-    BaseModel,
-    ConfigDict,
-    Field,
-    field_validator,
-)
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from routes.auth import get_current_user
 
@@ -60,6 +56,19 @@ LinkedItemType = Literal[
 # REQUEST MODELS
 # =========================================================
 
+class ExpenseRejectionInput(BaseModel):
+    model_config = ConfigDict(
+        str_strip_whitespace=True,
+        extra="ignore",
+    )
+
+    reason: str = Field(
+        ...,
+        min_length=3,
+        max_length=500,
+    )
+
+
 class BudgetInput(BaseModel):
     model_config = ConfigDict(
         str_strip_whitespace=True,
@@ -74,10 +83,6 @@ class BudgetInput(BaseModel):
 
 
 class ExpenseInput(BaseModel):
-    """
-    Used for creating and updating expenses.
-    """
-
     model_config = ConfigDict(
         str_strip_whitespace=True,
         extra="ignore",
@@ -145,7 +150,6 @@ class ExpenseInput(BaseModel):
             return None
 
         value = value.strip()
-
         return value or None
 
 
@@ -181,6 +185,16 @@ def get_user_id(user: dict) -> str:
     return str(value)
 
 
+def get_user_name(user: dict) -> str:
+    return str(
+        user.get("name")
+        or user.get("full_name")
+        or user.get("username")
+        or user.get("email")
+        or "EventSphere User"
+    )
+
+
 def get_role(user: dict) -> str:
     return str(
         user.get("role", "")
@@ -198,6 +212,20 @@ def require_manager(user: dict):
             detail=(
                 "Only organizers and administrators "
                 "can manage event budgets."
+            ),
+        )
+
+
+def require_admin(user: dict):
+    if get_role(user) not in (
+        "admin",
+        "administrator",
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "Only administrators can approve "
+                "or reject expenses."
             ),
         )
 
@@ -288,11 +316,6 @@ def normalize_ids(values) -> list[str]:
 
 
 def find_selected_item(collection, item_id: str):
-    """
-    EventSphere stores selected venue/resource/vendor IDs
-    as strings. MongoDB records use ObjectId.
-    """
-
     if not item_id:
         return None
 
@@ -304,27 +327,38 @@ def find_selected_item(collection, item_id: str):
         if item:
             return item
 
-    # Fallback for older records using string IDs.
     return collection.find_one(
         {"id": item_id}
     )
 
 
+def serialize_value(value):
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+
+    if isinstance(value, ObjectId):
+        return str(value)
+
+    if isinstance(value, dict):
+        return {
+            key: serialize_value(item)
+            for key, item in value.items()
+        }
+
+    if isinstance(value, list):
+        return [
+            serialize_value(item)
+            for item in value
+        ]
+
+    return value
+
+
 def serialize_datetime_fields(document: dict) -> dict:
-    result = {}
-
-    for key, value in document.items():
-
-        if isinstance(value, (datetime, date)):
-            result[key] = value.isoformat()
-
-        elif isinstance(value, ObjectId):
-            result[key] = str(value)
-
-        else:
-            result[key] = value
-
-    return result
+    return {
+        key: serialize_value(value)
+        for key, value in document.items()
+    }
 
 
 def safe_float(value, default=0.0) -> float:
@@ -334,7 +368,10 @@ def safe_float(value, default=0.0) -> float:
         if result != result:
             return default
 
-        if result in (float("inf"), float("-inf")):
+        if result in (
+            float("inf"),
+            float("-inf"),
+        ):
             return default
 
         return result
@@ -414,13 +451,6 @@ def get_event_selections(
     request: Request,
     event: dict,
 ) -> dict:
-    """
-    Retrieves the venue, resources and vendors
-    already selected during Event Management.
-
-    These are displayed as read-only selections.
-    Their catalogue estimates are not expenses.
-    """
 
     venue = None
 
@@ -430,7 +460,6 @@ def get_event_selections(
     )
 
     if venue_id:
-
         venue_document = find_selected_item(
             get_collection(request, "venues"),
             str(venue_id),
@@ -442,12 +471,10 @@ def get_event_selections(
                 "Venue",
             )
 
-    # Fallback to the venue name saved on the event.
     if not venue and (
         event.get("venue_name")
         or event.get("venue")
     ):
-
         venue = {
             "id": str(venue_id or ""),
             "name": (
@@ -469,14 +496,12 @@ def get_event_selections(
     )
 
     for resource_id in resource_ids:
-
         resource_document = find_selected_item(
             get_collection(request, "resources"),
             resource_id,
         )
 
         if resource_document:
-
             resources.append(
                 serialize_selected_item(
                     resource_document,
@@ -492,14 +517,12 @@ def get_event_selections(
     )
 
     for vendor_id in vendor_ids:
-
         vendor_document = find_selected_item(
             get_collection(request, "vendors"),
             vendor_id,
         )
 
         if vendor_document:
-
             vendors.append(
                 serialize_selected_item(
                     vendor_document,
@@ -552,24 +575,14 @@ def serialize_event(
         "event_date": str(event_date),
         "end_date": str(end_date),
 
-        "start_time": (
-            event.get("start_time")
-            or ""
-        ),
-
-        "end_time": (
-            event.get("end_time")
-            or ""
-        ),
+        "start_time": event.get("start_time") or "",
+        "end_time": event.get("end_time") or "",
 
         "attendee_count": int(
             event.get("attendee_count") or 0
         ),
 
-        "status": (
-            event.get("status")
-            or "Scheduled"
-        ),
+        "status": event.get("status") or "Scheduled",
 
         "venue_id": str(
             event.get("venue_id")
@@ -651,7 +664,7 @@ def expense_total(
     )
 
     return round(
-        float(result[0]["total"])
+        safe_float(result[0]["total"])
         if result
         else 0,
         2,
@@ -676,11 +689,7 @@ def serialize_budget(
         ),
 
         "total_budget": round(total, 2),
-
-        "total_expenses": round(
-            spent,
-            2,
-        ),
+        "total_expenses": round(spent, 2),
 
         "remaining_budget": round(
             total - spent,
@@ -761,6 +770,22 @@ def serialize_expense(expense: dict) -> dict:
         "updated_at": result.get(
             "updated_at"
         ),
+
+        "requested_by": result.get(
+            "requested_by"
+        ),
+
+        "requested_by_name": result.get(
+            "requested_by_name",
+            "Unknown",
+        ),
+
+        "approval": result.get("approval") or {
+            "reviewed_by": None,
+            "reviewed_by_name": None,
+            "reviewed_at": None,
+            "rejection_reason": None,
+        },
     }
 
 
@@ -776,9 +801,7 @@ def get_expense(
         )
 
     expense = get_expenses_collection(request).find_one(
-        {
-            "_id": ObjectId(expense_id)
-        }
+        {"_id": ObjectId(expense_id)}
     )
 
     if not expense:
@@ -796,6 +819,7 @@ def ensure_expense_fits_budget(
     new_amount: float,
     old_amount: float = 0,
 ):
+
     event_id = str(event["_id"])
 
     current_total = expense_total(
@@ -836,12 +860,6 @@ def validate_linked_item(
     event: dict,
     data: ExpenseInput,
 ):
-    """
-    A linked item must belong to the event's
-    existing venue, resource or vendor selections.
-
-    This does not add or modify event selections.
-    """
 
     if not data.linked_item_id:
         return
@@ -886,7 +904,6 @@ def validate_linked_item(
         )
 
     if item_id not in selected_ids:
-
         raise HTTPException(
             status_code=400,
             detail=(
@@ -896,19 +913,14 @@ def validate_linked_item(
         )
 
     item = find_selected_item(
-        get_collection(
-            request,
-            collection_name,
-        ),
+        get_collection(request, collection_name),
         item_id,
     )
 
     if not item:
         raise HTTPException(
             status_code=404,
-            detail=(
-                "The linked event item could not be found."
-            ),
+            detail="The linked event item could not be found.",
         )
 
     actual_name = (
@@ -929,6 +941,56 @@ def validate_linked_item(
                 "the saved event item."
             ),
         )
+
+
+def validate_no_duplicate_link(
+    request: Request,
+    event_id: str,
+    data: ExpenseInput,
+    exclude_expense_id: Optional[ObjectId] = None,
+):
+
+    if not data.linked_item_id:
+        return
+
+    query = {
+        "event_id": event_id,
+        "linked_item_type": data.linked_item_type,
+        "linked_item_id": data.linked_item_id,
+        "status": {"$ne": "Rejected"},
+    }
+
+    if exclude_expense_id:
+        query["_id"] = {
+            "$ne": exclude_expense_id
+        }
+
+    duplicate = get_expenses_collection(request).find_one(
+        query
+    )
+
+    if duplicate:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "An expense has already been allocated "
+                "to this selected event item."
+            ),
+        )
+
+
+def get_updated_budget_response(
+    request: Request,
+    event: dict,
+) -> dict:
+
+    return serialize_budget(
+        event,
+        expense_total(
+            request,
+            str(event["_id"]),
+        ),
+    )
 
 
 # =========================================================
@@ -1031,7 +1093,6 @@ def assign_event_budget(
     )
 
     if data.total_budget < current_expenses:
-
         raise HTTPException(
             status_code=400,
             detail=(
@@ -1041,9 +1102,7 @@ def assign_event_budget(
         )
 
     get_events_collection(request).update_one(
-        {
-            "_id": event["_id"]
-        },
+        {"_id": event["_id"]},
         {
             "$set": {
                 "budget": data.total_budget,
@@ -1059,15 +1118,10 @@ def assign_event_budget(
 
     return {
         "success": True,
-
         "message": "Event budget updated successfully.",
-
-        "budget": serialize_budget(
+        "budget": get_updated_budget_response(
+            request,
             updated_event,
-            expense_total(
-                request,
-                event_id,
-            ),
         ),
     }
 
@@ -1083,9 +1137,9 @@ def add_expense(
     request: Request,
     user: dict = Depends(get_current_user),
 ):
+
     require_manager(user)
 
-    # 1. Verify event exists and user has permission.
     event = get_event(
         request,
         event_id,
@@ -1096,50 +1150,31 @@ def add_expense(
         event,
     )
 
-    # 2. Validate the linked venue, resource or vendor.
     validate_linked_item(
         request,
         event,
         data,
     )
 
-    # 3. Prevent the same selected item from being allocated twice.
-    if (
-        data.linked_item_id
-        and data.status != "Rejected"
-    ):
-        duplicate = get_expenses_collection(request).find_one({
-            "event_id": event_id,
-            "linked_item_type": data.linked_item_type,
-            "linked_item_id": data.linked_item_id,
-            "status": {"$ne": "Rejected"},
-        })
+    validate_no_duplicate_link(
+        request,
+        event_id,
+        data,
+    )
 
-        if duplicate:
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    "An expense has already been allocated "
-                    "to this selected event item."
-                ),
-            )
+    # Every new expense must fit the budget.
+    # The client cannot bypass this by sending Rejected status.
+    ensure_expense_fits_budget(
+        request,
+        event,
+        data.amount,
+        0,
+    )
 
-    # 4. Check available budget.
-    # Rejected expenses do not count towards allocated budget.
-    if data.status != "Rejected":
-        ensure_expense_fits_budget(
-            request,
-            event,
-            data.amount,
-            0,
-        )
-
-    # 5. Prepare the expense document.
     now = datetime.now(timezone.utc)
 
     expense_document = data.model_dump()
 
-    # Do not retain linked-item information when no item is linked.
     if not data.linked_item_id:
         expense_document["linked_item_type"] = None
         expense_document["linked_item_id"] = None
@@ -1147,39 +1182,44 @@ def add_expense(
 
     expense_document.update({
         "event_id": event_id,
+
+        # New expenses always require admin review.
+        "status": "Pending",
+
+        "requested_by": get_user_id(user),
+        "requested_by_name": get_user_name(user),
+
+        "approval": {
+            "reviewed_by": None,
+            "reviewed_by_name": None,
+            "reviewed_at": None,
+            "rejection_reason": None,
+        },
+
         "created_at": now,
         "updated_at": now,
     })
 
-    # 6. Save the new expense.
     result = get_expenses_collection(request).insert_one(
         expense_document
     )
 
-    # 7. Retrieve the saved expense.
     created_expense = get_expenses_collection(request).find_one(
-        {
-            "_id": result.inserted_id
-        }
-    )
-
-    # 8. Recalculate the event budget.
-    updated_spent = expense_total(
-        request,
-        event_id,
+        {"_id": result.inserted_id}
     )
 
     return {
         "success": True,
-        "message": "Expense added successfully.",
+        "message": "Expense submitted for approval.",
         "expense": serialize_expense(
             created_expense
         ),
-        "budget": serialize_budget(
+        "budget": get_updated_budget_response(
+            request,
             event,
-            updated_spent,
         ),
     }
+
 
 # =========================================================
 # UPDATE EXISTING EXPENSE
@@ -1200,9 +1240,7 @@ def update_expense(
         expense_id,
     )
 
-    event_id = str(
-        existing["event_id"]
-    )
+    event_id = str(existing["event_id"])
 
     event = get_event(
         request,
@@ -1214,60 +1252,203 @@ def update_expense(
         event,
     )
 
+    # Do not allow editing a decision that has already been made.
+    if existing.get("status") in ("Approved", "Paid", "Rejected"):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "This expense has already been reviewed "
+                "and cannot be edited."
+            ),
+        )
+
     validate_linked_item(
         request,
         event,
         data,
     )
 
-    old_amount = (
-        safe_float(existing.get("amount"))
-        if existing.get("status") != "Rejected"
-        else 0
+    validate_no_duplicate_link(
+        request,
+        event_id,
+        data,
+        existing["_id"],
     )
 
-    if data.status != "Rejected":
+    old_amount = safe_float(
+        existing.get("amount")
+    )
 
-        ensure_expense_fits_budget(
-            request,
-            event,
-            data.amount,
-            old_amount,
-        )
+    ensure_expense_fits_budget(
+        request,
+        event,
+        data.amount,
+        old_amount,
+    )
+
+    update_document = data.model_dump()
+
+    if not data.linked_item_id:
+        update_document["linked_item_type"] = None
+        update_document["linked_item_id"] = None
+        update_document["linked_item_name"] = None
+
+    # Status and approval data cannot be changed through this route.
+    update_document.pop("status", None)
+
+    update_document["updated_at"] = datetime.now(timezone.utc)
 
     get_expenses_collection(request).update_one(
+        {"_id": existing["_id"]},
         {
-            "_id": existing["_id"]
+            "$set": update_document
         },
+    )
+
+    updated = get_expenses_collection(request).find_one(
+        {"_id": existing["_id"]}
+    )
+
+    return {
+        "success": True,
+        "message": "Expense updated successfully.",
+        "expense": serialize_expense(updated),
+        "budget": get_updated_budget_response(
+            request,
+            event,
+        ),
+    }
+
+
+# =========================================================
+# ADMIN: APPROVE EXPENSE
+# =========================================================
+
+@router.post("/expenses/{expense_id}/approve")
+def approve_expense(
+    expense_id: str,
+    request: Request,
+    user: dict = Depends(get_current_user),
+):
+
+    require_admin(user)
+
+    existing = get_expense(
+        request,
+        expense_id,
+    )
+
+    if existing.get("status") != "Pending":
+        raise HTTPException(
+            status_code=400,
+            detail="Only pending expenses can be approved.",
+        )
+
+    event_id = str(existing["event_id"])
+
+    event = get_event(
+        request,
+        event_id,
+    )
+
+    now = datetime.now(timezone.utc)
+
+    approval_data = {
+        "reviewed_by": get_user_id(user),
+        "reviewed_by_name": get_user_name(user),
+        "reviewed_at": now,
+        "rejection_reason": None,
+    }
+
+    get_expenses_collection(request).update_one(
+        {"_id": existing["_id"]},
         {
             "$set": {
-                **data.model_dump(),
-                "updated_at": datetime.now(timezone.utc),
+                "status": "Approved",
+                "approval": approval_data,
+                "updated_at": now,
             }
         },
     )
 
     updated = get_expenses_collection(request).find_one(
-        {
-            "_id": existing["_id"]
-        }
+        {"_id": existing["_id"]}
     )
 
     return {
         "success": True,
-
-        "message": "Expense updated successfully.",
-
-        "expense": serialize_expense(
-            updated
-        ),
-
-        "budget": serialize_budget(
+        "message": "Expense approved successfully.",
+        "expense": serialize_expense(updated),
+        "budget": get_updated_budget_response(
+            request,
             event,
-            expense_total(
-                request,
-                event_id,
-            ),
+        ),
+    }
+
+
+# =========================================================
+# ADMIN: REJECT EXPENSE
+# =========================================================
+
+@router.post("/expenses/{expense_id}/reject")
+def reject_expense(
+    expense_id: str,
+    data: ExpenseRejectionInput,
+    request: Request,
+    user: dict = Depends(get_current_user),
+):
+
+    require_admin(user)
+
+    existing = get_expense(
+        request,
+        expense_id,
+    )
+
+    if existing.get("status") != "Pending":
+        raise HTTPException(
+            status_code=400,
+            detail="Only pending expenses can be rejected.",
+        )
+
+    event_id = str(existing["event_id"])
+
+    event = get_event(
+        request,
+        event_id,
+    )
+
+    now = datetime.now(timezone.utc)
+
+    approval_data = {
+        "reviewed_by": get_user_id(user),
+        "reviewed_by_name": get_user_name(user),
+        "reviewed_at": now,
+        "rejection_reason": data.reason,
+    }
+
+    get_expenses_collection(request).update_one(
+        {"_id": existing["_id"]},
+        {
+            "$set": {
+                "status": "Rejected",
+                "approval": approval_data,
+                "updated_at": now,
+            }
+        },
+    )
+
+    updated = get_expenses_collection(request).find_one(
+        {"_id": existing["_id"]}
+    )
+
+    return {
+        "success": True,
+        "message": "Expense rejected successfully.",
+        "expense": serialize_expense(updated),
+        "budget": get_updated_budget_response(
+            request,
+            event,
         ),
     }
 
@@ -1282,9 +1463,9 @@ def delete_expense(
     request: Request,
     user: dict = Depends(get_current_user),
 ):
+
     require_manager(user)
 
-    # Find the existing expense.
     existing = get_expense(
         request,
         expense_id,
@@ -1292,7 +1473,6 @@ def delete_expense(
 
     event_id = str(existing["event_id"])
 
-    # Verify that the event exists and the user has access.
     event = get_event(
         request,
         event_id,
@@ -1303,7 +1483,17 @@ def delete_expense(
         event,
     )
 
-    # Delete only the expense record.
+    # Reviewed expenses should not be deleted through the
+    # normal expense-management route.
+    if existing.get("status") in ("Approved", "Paid", "Rejected"):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Reviewed expenses cannot be deleted "
+                "through this operation."
+            ),
+        )
+
     result = get_expenses_collection(request).delete_one(
         {
             "_id": existing["_id"],
@@ -1317,18 +1507,80 @@ def delete_expense(
             detail="Expense not found or already deleted.",
         )
 
-    # Recalculate budget after deletion.
-    updated_spent = expense_total(
-        request,
-        event_id,
-    )
-
     return {
         "success": True,
         "message": "Expense deleted successfully.",
         "deleted_expense_id": expense_id,
-        "budget": serialize_budget(
+        "budget": get_updated_budget_response(
+            request,
             event,
-            updated_spent,
         ),
+    }
+
+# =========================================================
+# ADMIN: GET ALL EXPENSE APPROVAL REQUESTS
+# GET /api/budgets/approvals
+# =========================================================
+
+@router.get("/approvals")
+def get_expense_approvals(
+    request: Request,
+    user: dict = Depends(get_current_user),
+):
+    require_admin(user)
+
+    expenses_collection = get_expenses_collection(request)
+    events_collection = get_events_collection(request)
+
+    expenses = expenses_collection.find(
+        {}
+    ).sort(
+        "created_at",
+        -1,
+    )
+
+    result = []
+
+    for expense in expenses:
+        item = serialize_expense(expense)
+
+        event_id = str(expense.get("event_id", ""))
+
+        event = None
+
+        if ObjectId.is_valid(event_id):
+            event = events_collection.find_one(
+                {"_id": ObjectId(event_id)},
+                {
+                    "name": 1,
+                    "title": 1,
+                    "event_name": 1,
+                    "event_date": 1,
+                    "date": 1,
+                },
+            )
+
+        if event:
+            item["event_name"] = (
+                event.get("name")
+                or event.get("title")
+                or event.get("event_name")
+                or "Untitled event"
+            )
+
+            item["event_date"] = str(
+                event.get("event_date")
+                or event.get("date")
+                or ""
+            )
+        else:
+            item["event_name"] = "Unknown event"
+            item["event_date"] = ""
+
+        result.append(item)
+
+    return {
+        "success": True,
+        "expenses": result,
+        "count": len(result),
     }

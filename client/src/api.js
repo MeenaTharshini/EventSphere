@@ -19,46 +19,6 @@ function getAuthToken() {
     sessionStorage.getItem("token")
   );
 }
-// =========================================================
-// VENDOR ASSIGNED EVENTS
-// GET /api/vendors/profile/me/events
-// =========================================================
-
-
-/**
- * GET /api/vendors/events/assigned
- *
- * Returns events assigned to the currently logged-in vendor.
- * The backend response is:
- * {
- *   success: true,
- *   events: [...],
- *   count: number
- * }
- */
-export async function getMyAssignedEvents() {
-  const response = await apiRequest(
-    "/vendors/events/assigned",
-    {
-      method: "GET",
-    }
-  );
-
-  if (Array.isArray(response)) {
-    return response;
-  }
-
-  if (Array.isArray(response?.events)) {
-    return response.events;
-  }
-
-  if (Array.isArray(response?.assigned_events)) {
-    return response.assigned_events;
-  }
-
-  return [];
-}
-
 
 function getErrorMessage(data, status) {
   if (typeof data?.detail === "string") {
@@ -92,16 +52,25 @@ function getErrorMessage(data, status) {
 // COMMON API REQUEST HANDLER
 // =========================================================
 
-
 export async function apiRequest(endpoint, options = {}) {
   const normalizedEndpoint = endpoint.startsWith("/")
     ? endpoint
     : `/${endpoint}`;
 
   const url = `${API_BASE_URL}${normalizedEndpoint}`;
+
   const headers = new Headers(options.headers || {});
   const token = getAuthToken();
 
+  // Public authentication endpoints.
+  // These must not receive an old/stale Authorization token.
+  const isPublicAuthRequest = [
+    "/auth/login",
+    "/auth/admin/login",
+    "/auth/register",
+  ].includes(normalizedEndpoint);
+
+  // Set JSON content type when a request has a body.
   if (
     options.body !== undefined &&
     options.body !== null &&
@@ -110,17 +79,20 @@ export async function apiRequest(endpoint, options = {}) {
     headers.set("Content-Type", "application/json");
   }
 
+  // Attach authentication token only to protected requests.
   if (
     token &&
-    !normalizedEndpoint.includes("/auth/login") &&
-    !normalizedEndpoint.includes("/auth/register") &&
+    !isPublicAuthRequest &&
     !headers.has("Authorization")
   ) {
     headers.set("Authorization", `Bearer ${token}`);
   }
 
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+  const timeoutId = setTimeout(() => {
+    controller.abort();
+  }, 10000);
 
   try {
     const response = await fetch(url, {
@@ -129,29 +101,40 @@ export async function apiRequest(endpoint, options = {}) {
       signal: controller.signal,
     });
 
-    const contentType = response.headers.get("content-type") || "";
+    const contentType =
+      response.headers.get("content-type") || "";
+
     let data = {};
 
     if (contentType.includes("application/json")) {
       data = await response.json().catch(() => ({}));
     } else if (response.status !== 204) {
-      const text = await response.text().catch(() => "");
-      data = text ? { message: text } : {};
+      const responseText = await response
+        .text()
+        .catch(() => "");
+
+      data = responseText
+        ? { message: responseText }
+        : {};
     }
 
     if (!response.ok) {
-      const message = getErrorMessage(data, response.status);
+      const message = getErrorMessage(
+        data,
+        response.status
+      );
 
-      // A failed login or registration must not log out
-      // an existing user through the global logout handler.
+      // Failed public login/signup attempts must not
+      // terminate an existing user's session.
       if (
         response.status === 401 &&
-        !normalizedEndpoint.includes("/auth/login") &&
-        !normalizedEndpoint.includes("/auth/register")
+        !isPublicAuthRequest
       ) {
         logoutUser();
 
-        window.dispatchEvent(new Event("auth:logout"));
+        window.dispatchEvent(
+          new Event("auth:logout")
+        );
       }
 
       throw new Error(message);
@@ -168,8 +151,8 @@ export async function apiRequest(endpoint, options = {}) {
     if (error instanceof TypeError) {
       throw new Error(
         "Cannot connect to FastAPI at " +
-        API_BASE_URL +
-        ". Check the backend URL and CORS settings."
+          API_BASE_URL +
+          ". Check the backend URL and CORS settings."
       );
     }
 
@@ -179,12 +162,12 @@ export async function apiRequest(endpoint, options = {}) {
   }
 }
 
-
 // =========================================================
 // AUTHENTICATION
 // =========================================================
 
 // POST /api/auth/register
+// Public registration: Attendee, Organizer, Vendor.
 export function registerUser(user) {
   return apiRequest("/auth/register", {
     method: "POST",
@@ -193,6 +176,7 @@ export function registerUser(user) {
 }
 
 // POST /api/auth/login
+// Normal user login.
 export async function loginUser(credentials) {
   const data = await apiRequest("/auth/login", {
     method: "POST",
@@ -205,8 +189,53 @@ export async function loginUser(credentials) {
   }
 
   if (data.user) {
-    localStorage.setItem("user", JSON.stringify(data.user));
+    localStorage.setItem(
+      "user",
+      JSON.stringify(data.user)
+    );
   }
+
+  return data;
+}
+
+// POST /api/auth/admin/login
+// Separate administrator login portal.
+export async function loginAdmin(credentials) {
+  const data = await apiRequest("/auth/admin/login", {
+    method: "POST",
+    body: JSON.stringify(credentials),
+  });
+
+  if (!data?.token || !data?.user) {
+    throw new Error(
+      "Admin login failed. Please try again."
+    );
+  }
+
+  const role = String(data.user.role || "")
+    .trim()
+    .toLowerCase();
+
+  if (
+    role !== "admin" &&
+    role !== "administrator"
+  ) {
+    throw new Error(
+      "This account does not have administrator access."
+    );
+  }
+
+  // Store Admin credentials using the same
+  // authentication storage as normal users.
+  localStorage.setItem("token", data.token);
+
+  localStorage.setItem(
+    "user",
+    JSON.stringify(data.user)
+  );
+
+  sessionStorage.removeItem("token");
+  sessionStorage.removeItem("user");
 
   return data;
 }
@@ -216,20 +245,52 @@ export async function getCurrentUser() {
   const data = await apiRequest("/auth/me");
 
   if (data.user) {
-    localStorage.setItem("user", JSON.stringify(data.user));
+    localStorage.setItem(
+      "user",
+      JSON.stringify(data.user)
+    );
+
     return data.user;
   }
 
   return data;
 }
 
-// Clear authentication details
+// Clear authentication details.
 export function logoutUser() {
   localStorage.removeItem("token");
   localStorage.removeItem("user");
 
   sessionStorage.removeItem("token");
   sessionStorage.removeItem("user");
+}
+
+// =========================================================
+// VENDOR ASSIGNED EVENTS
+// GET /api/vendors/events/assigned
+// =========================================================
+
+export async function getMyAssignedEvents() {
+  const response = await apiRequest(
+    "/vendors/events/assigned",
+    {
+      method: "GET",
+    }
+  );
+
+  if (Array.isArray(response)) {
+    return response;
+  }
+
+  if (Array.isArray(response?.events)) {
+    return response.events;
+  }
+
+  if (Array.isArray(response?.assigned_events)) {
+    return response.assigned_events;
+  }
+
+  return [];
 }
 
 // =========================================================
@@ -251,22 +312,30 @@ export function createEvent(event) {
 
 // GET /api/events/{id}
 export function getEvent(id) {
-  return apiRequest(`/events/${encodeURIComponent(id)}`);
+  return apiRequest(
+    `/events/${encodeURIComponent(id)}`
+  );
 }
 
 // PUT /api/events/{id}
 export function updateEvent(id, event) {
-  return apiRequest(`/events/${encodeURIComponent(id)}`, {
-    method: "PUT",
-    body: JSON.stringify(event),
-  });
+  return apiRequest(
+    `/events/${encodeURIComponent(id)}`,
+    {
+      method: "PUT",
+      body: JSON.stringify(event),
+    }
+  );
 }
 
 // DELETE /api/events/{id}
 export function deleteEvent(id) {
-  return apiRequest(`/events/${encodeURIComponent(id)}`, {
-    method: "DELETE",
-  });
+  return apiRequest(
+    `/events/${encodeURIComponent(id)}`,
+    {
+      method: "DELETE",
+    }
+  );
 }
 
 // =========================================================
@@ -280,7 +349,9 @@ export function getVenues() {
 
 // GET /api/venues/{id}
 export function getVenue(id) {
-  return apiRequest(`/venues/${encodeURIComponent(id)}`);
+  return apiRequest(
+    `/venues/${encodeURIComponent(id)}`
+  );
 }
 
 // POST /api/venues/
@@ -293,17 +364,23 @@ export function createVenue(venue) {
 
 // PUT /api/venues/{id}
 export function updateVenue(id, venue) {
-  return apiRequest(`/venues/${encodeURIComponent(id)}`, {
-    method: "PUT",
-    body: JSON.stringify(venue),
-  });
+  return apiRequest(
+    `/venues/${encodeURIComponent(id)}`,
+    {
+      method: "PUT",
+      body: JSON.stringify(venue),
+    }
+  );
 }
 
 // DELETE /api/venues/{id}
 export function deleteVenue(id) {
-  return apiRequest(`/venues/${encodeURIComponent(id)}`, {
-    method: "DELETE",
-  });
+  return apiRequest(
+    `/venues/${encodeURIComponent(id)}`,
+    {
+      method: "DELETE",
+    }
+  );
 }
 
 // =========================================================
@@ -317,7 +394,9 @@ export function getResources() {
 
 // GET /api/resources/{id}
 export function getResource(id) {
-  return apiRequest(`/resources/${encodeURIComponent(id)}`);
+  return apiRequest(
+    `/resources/${encodeURIComponent(id)}`
+  );
 }
 
 // POST /api/resources/
@@ -330,17 +409,23 @@ export function createResource(resource) {
 
 // PUT /api/resources/{id}
 export function updateResource(id, resource) {
-  return apiRequest(`/resources/${encodeURIComponent(id)}`, {
-    method: "PUT",
-    body: JSON.stringify(resource),
-  });
+  return apiRequest(
+    `/resources/${encodeURIComponent(id)}`,
+    {
+      method: "PUT",
+      body: JSON.stringify(resource),
+    }
+  );
 }
 
 // DELETE /api/resources/{id}
 export function deleteResource(id) {
-  return apiRequest(`/resources/${encodeURIComponent(id)}`, {
-    method: "DELETE",
-  });
+  return apiRequest(
+    `/resources/${encodeURIComponent(id)}`,
+    {
+      method: "DELETE",
+    }
+  );
 }
 
 // =========================================================
@@ -378,9 +463,12 @@ export function registerAttendee(attendee) {
 // =========================================================
 
 export async function getMyRegistrations() {
-  const response = await apiRequest("/attendees/my-registrations", {
-    method: "GET",
-  });
+  const response = await apiRequest(
+    "/attendees/my-registrations",
+    {
+      method: "GET",
+    }
+  );
 
   if (Array.isArray(response)) {
     return response;
@@ -392,12 +480,12 @@ export async function getMyRegistrations() {
 
   return [];
 }
+
 // =========================================================
 // DIGITAL TICKETS
 // =========================================================
 
 // GET /api/tickets
-// Retrieve tickets belonging to the logged-in attendee.
 export async function getMyTickets() {
   const response = await apiRequest("/tickets", {
     method: "GET",
@@ -409,40 +497,45 @@ export async function getMyTickets() {
 }
 
 // GET /api/tickets/{ticket_id}
-// Retrieve a specific ticket.
 export async function getTicket(ticketId) {
   return apiRequest(
     `/tickets/${encodeURIComponent(ticketId)}`,
-    { method: "GET" }
+    {
+      method: "GET",
+    }
   );
 }
 
 // GET /api/tickets/verify/{ticket_id}
-// Verify a ticket (Organizer/Admin only).
 export async function verifyTicket(ticketId) {
   return apiRequest(
     `/tickets/verify/${encodeURIComponent(ticketId)}`,
-    { method: "GET" }
+    {
+      method: "GET",
+    }
   );
 }
 
 // POST /api/tickets/{ticket_id}/check-in
-// Mark a valid ticket as used (Organizer/Admin only).
 export async function checkInTicket(ticketId) {
   return apiRequest(
     `/tickets/${encodeURIComponent(ticketId)}/check-in`,
-    { method: "POST" }
+    {
+      method: "POST",
+    }
   );
 }
 
 // PATCH /api/tickets/{ticket_id}/cancel
-// Cancel a ticket (Organizer/Admin only).
 export async function cancelTicket(ticketId) {
   return apiRequest(
     `/tickets/${encodeURIComponent(ticketId)}/cancel`,
-    { method: "PATCH" }
+    {
+      method: "PATCH",
+    }
   );
 }
+
 // =========================================================
 // UNREGISTER FROM AN EVENT
 // DELETE /api/attendees/registrations/{registration_id}
@@ -458,6 +551,7 @@ export function unregisterAttendee(registrationId) {
     }
   );
 }
+
 // =========================================================
 // VENDOR MANAGEMENT
 // =========================================================
@@ -489,9 +583,17 @@ export function updateMyVendorProfile(vendor) {
 export function getApprovedVendors(params = {}) {
   const query = new URLSearchParams();
 
-  if (params.category) query.set("category", params.category);
-  if (params.city) query.set("city", params.city);
-  if (params.search) query.set("search", params.search);
+  if (params.category) {
+    query.set("category", params.category);
+  }
+
+  if (params.city) {
+    query.set("city", params.city);
+  }
+
+  if (params.search) {
+    query.set("search", params.search);
+  }
 
   if (params.skip !== undefined) {
     query.set("skip", String(params.skip));
@@ -520,12 +622,12 @@ export function getVendorDetails(vendorId) {
     }
   );
 }
+
 // =========================================================
 // ADMIN VENDOR MANAGEMENT
 // =========================================================
 
 // GET /api/vendors/admin/applications
-// Retrieve vendor applications for administrator review.
 export function getVendors(params = {}) {
   const query = new URLSearchParams();
 
@@ -581,12 +683,25 @@ export function rejectVendor(vendorId) {
   );
 }
 
+// =========================================================
+// SPONSORSHIPS
+// =========================================================
+
+// GET /api/sponsorships/
 export function getSponsorships(params = {}) {
   const query = new URLSearchParams();
 
-  if (params.event_id) query.set("event_id", params.event_id);
-  if (params.status) query.set("status", params.status);
-  if (params.search) query.set("search", params.search);
+  if (params.event_id) {
+    query.set("event_id", params.event_id);
+  }
+
+  if (params.status) {
+    query.set("status", params.status);
+  }
+
+  if (params.search) {
+    query.set("search", params.search);
+  }
 
   const queryString = query.toString();
 
@@ -595,14 +710,21 @@ export function getSponsorships(params = {}) {
   );
 }
 
+// GET /api/sponsorships/event/{event_id}
 export function getEventSponsorships(eventId) {
-  return apiRequest(`/sponsorships/event/${eventId}`);
+  return apiRequest(
+    `/sponsorships/event/${encodeURIComponent(eventId)}`
+  );
 }
 
+// GET /api/sponsorships/{id}
 export function getSponsorship(id) {
-  return apiRequest(`/sponsorships/${id}`);
+  return apiRequest(
+    `/sponsorships/${encodeURIComponent(id)}`
+  );
 }
 
+// POST /api/sponsorships/
 export function createSponsorship(data) {
   return apiRequest("/sponsorships/", {
     method: "POST",
@@ -610,15 +732,23 @@ export function createSponsorship(data) {
   });
 }
 
+// PUT /api/sponsorships/{id}
 export function updateSponsorship(id, data) {
-  return apiRequest(`/sponsorships/${id}`, {
-    method: "PUT",
-    body: JSON.stringify(data),
-  });
+  return apiRequest(
+    `/sponsorships/${encodeURIComponent(id)}`,
+    {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }
+  );
 }
 
+// DELETE /api/sponsorships/{id}
 export function deleteSponsorship(id) {
-  return apiRequest(`/sponsorships/${id}`, {
-    method: "DELETE",
-  });
+  return apiRequest(
+    `/sponsorships/${encodeURIComponent(id)}`,
+    {
+      method: "DELETE",
+    }
+  );
 }

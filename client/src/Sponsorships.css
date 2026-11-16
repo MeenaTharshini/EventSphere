@@ -1,728 +1,937 @@
 
+/* =========================================================
+   EventSphere — Sponsorship Management
+   Visual style aligned with Events.css
+   Sage green / white theme
+   Responsive desktop, tablet and mobile
+   ========================================================= */
+
+:root {
+  --sp-ink: #153f38;
+  --sp-ink-dark: #103b34;
+  --sp-muted: #7a918b;
+  --sp-primary: #258773;
+  --sp-primary-dark: #1b705f;
+  --sp-primary-soft: #eaf5ef;
+  --sp-border: #e2e9e1;
+  --sp-white: #ffffff;
+  --sp-page: #f5f7f3;
+  --sp-shadow: 0 3px 15px rgba(24, 63, 54, 0.045);
+  --sp-radius: 12px;
+}
+
+/* ---------- Main page ---------- */
+
 .sponsorship-page {
   width: 100%;
+  max-width: 1600px;
   min-width: 0;
-  color: var(--text-primary, #1e293b);
-  animation: sponsorshipFadeIn 0.25s ease;
+  margin: 0 auto;
+  color: var(--sp-ink);
+  font-family: Inter, "Segoe UI", Arial, sans-serif;
+  font-size: 13px;
+  line-height: 1.5;
 }
 
-@keyframes sponsorshipFadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(5px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.sponsorship-page * {
+.sponsorship-page *,
+.sponsorship-page *::before,
+.sponsorship-page *::after {
   box-sizing: border-box;
 }
 
-.sponsorship-header {
+.sponsorship-page button,
+.sponsorship-page input,
+.sponsorship-page select,
+.sponsorship-page textarea {
+  font: inherit;
+}
+
+.sponsorship-page button {
+  cursor: pointer;
+}
+
+.sponsorship-page button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+/* ---------- Page heading ---------- */
+
+.sponsorship-page-header {
   display: flex;
+  align-items: center;
   justify-content: space-between;
-  align-items: flex-start;
-  gap: 24px;
-  margin-bottom: 26px;
+  gap: 18px;
+  margin-bottom: 20px;
+  padding: 0 0 18px;
+  border-bottom: 1px solid var(--sp-border);
+}
+
+.sponsorship-page-header > div:first-child {
+  min-width: 0;
 }
 
 .sponsorship-eyebrow {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 7px;
-  color: #64748b;
+  margin: 0 0 5px;
+  color: var(--sp-primary);
   font-size: 10px;
   font-weight: 800;
-  letter-spacing: 1.2px;
-  margin-bottom: 9px;
+  letter-spacing: 1.3px;
+  text-transform: uppercase;
 }
 
-.sponsorship-header h1 {
+.sponsorship-page-header h2 {
   margin: 0;
-  color: #172033;
-  font-size: clamp(24px, 3vw, 30px);
+  color: var(--sp-ink-dark);
+  font-size: clamp(23px, 2.2vw, 29px);
   font-weight: 750;
-  letter-spacing: -0.8px;
+  letter-spacing: -0.7px;
+  line-height: 1.25;
 }
 
-.sponsorship-header > div:first-child > p {
-  margin: 8px 0 0;
-  color: #778195;
-  font-size: 13px;
-  line-height: 1.6;
+.sponsorship-page-header > div > p:last-child {
+  margin: 7px 0 0;
+  color: var(--sp-muted);
+  font-size: 12px;
 }
 
 .sponsorship-header-actions {
   display: flex;
-  align-items: center;
-  gap: 10px;
   flex-shrink: 0;
+  align-items: center;
+  gap: 9px;
 }
 
-.sponsorship-btn {
-  min-height: 40px;
+/* ---------- Buttons ---------- */
+
+.sponsorship-primary-button,
+.sponsorship-secondary-button,
+.sponsorship-danger-button {
   display: inline-flex;
-  justify-content: center;
   align-items: center;
-  gap: 8px;
-  padding: 0 15px;
+  justify-content: center;
+  gap: 7px;
+  min-height: 36px;
+  padding: 8px 13px;
   border: 1px solid transparent;
   border-radius: 8px;
   font-size: 12px;
   font-weight: 700;
-  cursor: pointer;
-  transition: background 0.18s ease, border-color 0.18s ease,
-    transform 0.18s ease, opacity 0.18s ease;
+  line-height: 1.3;
+  text-align: center;
+  text-decoration: none;
+  transition:
+    background 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
 }
 
-.sponsorship-btn:disabled {
-  cursor: not-allowed;
-  opacity: 0.55;
+.sponsorship-primary-button {
+  border-color: var(--sp-primary);
+  background: var(--sp-primary);
+  color: #ffffff;
+  box-shadow: 0 3px 8px rgba(37, 135, 115, 0.13);
 }
 
-.sponsorship-btn:not(:disabled):active {
-  transform: scale(0.98);
+.sponsorship-primary-button:hover:not(:disabled) {
+  border-color: var(--sp-primary-dark);
+  background: var(--sp-primary-dark);
+  box-shadow: 0 5px 12px rgba(37, 135, 115, 0.18);
 }
 
-.sponsorship-btn-primary {
-  color: #fff;
-  background: #4f46e5;
-  border-color: #4f46e5;
+.sponsorship-secondary-button {
+  border-color: var(--sp-border);
+  background: #ffffff;
+  color: var(--sp-ink-dark);
 }
 
-.sponsorship-btn-primary:not(:disabled):hover {
-  background: #4338ca;
-  border-color: #4338ca;
+.sponsorship-secondary-button:hover:not(:disabled) {
+  border-color: #b8d7ca;
+  background: var(--sp-primary-soft);
+  color: var(--sp-primary-dark);
 }
 
-.sponsorship-btn-secondary {
-  color: #475569;
-  background: #fff;
-  border-color: #e2e8f0;
+.sponsorship-danger-button {
+  border-color: #f0d5d2;
+  background: #fff7f6;
+  color: #bd4949;
 }
 
-.sponsorship-btn-secondary:not(:disabled):hover {
-  background: #f8fafc;
-  border-color: #cbd5e1;
+.sponsorship-danger-button:hover:not(:disabled) {
+  border-color: #e7b4b0;
+  background: #fdebea;
 }
 
-/* ALERTS */
+.sponsorship-page button:focus-visible,
+.sponsorship-page input:focus-visible,
+.sponsorship-page select:focus-visible,
+.sponsorship-page textarea:focus-visible {
+  outline: 3px solid rgba(37, 135, 115, 0.2);
+  outline-offset: 2px;
+}
+
+/* ---------- Alerts ---------- */
 
 .sponsorship-alert {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 10px;
+  margin-bottom: 15px;
   padding: 11px 13px;
-  border-radius: 8px;
-  margin-bottom: 16px;
+  border: 1px solid var(--sp-border);
+  border-radius: 9px;
   font-size: 12px;
-  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.sponsorship-alert > svg {
+  flex-shrink: 0;
+  margin-top: 1px;
 }
 
 .sponsorship-alert > span {
   flex: 1;
+  min-width: 0;
 }
 
 .sponsorship-alert > button {
   display: grid;
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
   place-items: center;
-  padding: 3px;
+  padding: 0;
   border: 0;
+  border-radius: 6px;
   background: transparent;
   color: inherit;
-  cursor: pointer;
 }
 
 .sponsorship-alert-error {
-  color: #b42318;
-  background: #fff1f0;
-  border: 1px solid #ffd5d2;
+  border-color: #f0ceca;
+  background: #fff4f2;
+  color: #a33b35;
 }
 
 .sponsorship-alert-success {
-  color: #167647;
-  background: #ecfdf3;
-  border: 1px solid #b7ebca;
+  border-color: #cbe7d6;
+  background: #edf8f0;
+  color: #26734e;
 }
 
-/* SUMMARY CARDS */
+/* ---------- Summary cards ---------- */
 
 .sponsorship-stats-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 15px;
-  margin-bottom: 24px;
+  gap: 13px;
+  margin-bottom: 17px;
 }
 
 .sponsorship-stat-card {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 12px;
   min-width: 0;
-  min-height: 112px;
-  padding: 19px 17px;
-  background: #fff;
-  border: 1px solid #edf0f5;
-  border-radius: 11px;
-  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.025);
+  padding: 15px;
+  border: 1px solid var(--sp-border);
+  border-radius: var(--sp-radius);
+  background: var(--sp-white);
+  box-shadow: var(--sp-shadow);
 }
 
 .sponsorship-stat-icon {
-  width: 43px;
-  height: 43px;
-  flex: 0 0 43px;
   display: grid;
+  flex-shrink: 0;
+  width: 39px;
+  height: 39px;
   place-items: center;
   border-radius: 10px;
 }
 
 .sponsors-icon {
-  color: #4f46e5;
-  background: #eeedff;
+  background: #eaf3ff;
+  color: #477ab2;
 }
 
 .pledged-icon {
-  color: #0d9488;
-  background: #e6f8f5;
+  background: #eaf5ef;
+  color: #258773;
 }
 
 .received-icon {
-  color: #16834b;
-  background: #eaf8ef;
+  background: #edf7f1;
+  color: #36815d;
 }
 
 .outstanding-icon {
-  color: #c47b13;
-  background: #fff6e5;
+  background: #fff5e7;
+  color: #b47a2c;
 }
 
-.sponsorship-stat-card > div:last-child {
-  min-width: 0;
+.sponsorship-stat-content {
   display: flex;
+  min-width: 0;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
 }
 
-.sponsorship-stat-label {
-  color: #7b8495;
-  font-size: 11px;
-  font-weight: 600;
+.sponsorship-stat-content > span {
+  color: var(--sp-muted);
+  font-size: 10px;
+  font-weight: 650;
 }
 
-.sponsorship-stat-card strong {
-  overflow: hidden;
-  color: #1e293b;
-  font-size: clamp(16px, 1.5vw, 21px);
+.sponsorship-stat-content > strong {
+  color: var(--sp-ink-dark);
+  font-size: clamp(15px, 1.4vw, 19px);
   font-weight: 750;
-  letter-spacing: -0.5px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  letter-spacing: -0.4px;
+  overflow-wrap: anywhere;
 }
 
-.sponsorship-stat-card small {
-  color: #98a1b1;
+.sponsorship-stat-content > small {
+  color: #91a29b;
   font-size: 10px;
 }
 
-/* TOOLBAR */
+/* ---------- Search and filters ---------- */
 
 .sponsorship-toolbar {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(145px, 190px) minmax(135px, 165px) auto;
   align-items: center;
-  flex-wrap: wrap;
   gap: 10px;
-  padding: 14px;
   margin-bottom: 18px;
-  background: #fff;
-  border: 1px solid #edf0f5;
-  border-radius: 10px;
+  padding: 12px;
+  border: 1px solid var(--sp-border);
+  border-radius: var(--sp-radius);
+  background: var(--sp-white);
+  box-shadow: var(--sp-shadow);
 }
 
-.sponsorship-search {
-  height: 39px;
-  flex: 1 1 250px;
+.sponsorship-search,
+.sponsorship-filter {
   display: flex;
   align-items: center;
-  gap: 9px;
-  padding: 0 11px;
-  background: #f8fafc;
-  border: 1px solid #e8edf3;
-  border-radius: 7px;
-  color: #8792a3;
+  gap: 8px;
+  min-width: 0;
+  height: 37px;
+  padding: 0 10px;
+  border: 1px solid var(--sp-border);
+  border-radius: 8px;
+  background: #fbfcfa;
+  color: var(--sp-muted);
 }
 
-.sponsorship-search input {
+.sponsorship-search:focus-within,
+.sponsorship-filter:focus-within {
+  border-color: var(--sp-primary);
+  background: #ffffff;
+  box-shadow: 0 0 0 3px rgba(37, 135, 115, 0.08);
+}
+
+.sponsorship-search > svg,
+.sponsorship-filter > svg {
+  flex-shrink: 0;
+}
+
+.sponsorship-search input,
+.sponsorship-filter select {
   width: 100%;
   min-width: 0;
+  height: 100%;
   padding: 0;
-  outline: none;
   border: 0;
+  outline: none;
   background: transparent;
-  color: #263247;
-  font: inherit;
-  font-size: 12px;
+  color: var(--sp-ink);
+  font-size: 11px;
 }
 
 .sponsorship-search input::placeholder {
-  color: #a0a9b7;
+  color: #9aaba4;
 }
 
 .sponsorship-search button {
   display: grid;
+  flex-shrink: 0;
+  width: 23px;
+  height: 23px;
   place-items: center;
-  padding: 2px;
+  padding: 0;
   border: 0;
+  border-radius: 5px;
   background: transparent;
-  color: #8490a1;
-  cursor: pointer;
-}
-
-.sponsorship-filter {
-  height: 39px;
-  min-width: 150px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 10px;
-  border: 1px solid #e8edf3;
-  border-radius: 7px;
-  background: #fff;
-  color: #8792a3;
-}
-
-.sponsorship-filter select {
-  width: 100%;
-  min-width: 0;
-  outline: none;
-  border: 0;
-  background: transparent;
-  color: #475569;
-  font-size: 11px;
-  cursor: pointer;
+  color: var(--sp-muted);
 }
 
 .sponsorship-result-count {
-  margin-left: auto;
-  color: #8490a1;
+  color: var(--sp-muted);
   font-size: 11px;
+  font-weight: 650;
+  text-align: right;
   white-space: nowrap;
 }
 
-/* TABLE SECTION */
+/* ---------- Records section ---------- */
 
-.sponsorship-table-section {
-  overflow: hidden;
-  background: #fff;
-  border: 1px solid #edf0f5;
-  border-radius: 11px;
-  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.025);
+.sponsorship-records-section {
+  min-width: 0;
 }
 
 .sponsorship-section-heading {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 19px 20px;
-  border-bottom: 1px solid #edf0f5;
+  gap: 12px;
+  margin-bottom: 13px;
 }
 
-.sponsorship-section-heading h2 {
+.sponsorship-section-heading h3 {
   margin: 0;
-  color: #1e293b;
-  font-size: 15px;
+  color: var(--sp-ink-dark);
+  font-size: 16px;
   font-weight: 750;
 }
 
 .sponsorship-section-heading p {
-  margin: 5px 0 0;
-  color: #8993a3;
+  margin: 4px 0 0;
+  color: var(--sp-muted);
   font-size: 11px;
 }
 
-.sponsorship-table-wrapper {
-  width: 100%;
-  overflow-x: auto;
+/* ---------- Sponsor cards ---------- */
+
+.sponsorship-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: stretch;
+  gap: 14px;
 }
 
-.sponsorship-table {
-  width: 100%;
-  min-width: 970px;
-  border-collapse: collapse;
-  text-align: left;
-}
-
-.sponsorship-table thead {
-  background: #f8fafc;
-}
-
-.sponsorship-table th {
-  padding: 13px 14px;
-  color: #8490a1;
-  font-size: 9px;
-  font-weight: 800;
-  letter-spacing: 0.65px;
-  white-space: nowrap;
-}
-
-.sponsorship-table td {
-  padding: 14px;
-  border-top: 1px solid #f0f2f6;
-  color: #475569;
-  font-size: 11px;
-  vertical-align: middle;
-}
-
-.sponsorship-table tbody tr {
-  transition: background 0.15s ease;
-}
-
-.sponsorship-table tbody tr:hover {
-  background: #fbfcff;
-}
-
-.sponsorship-sponsor-cell {
+.sponsorship-card {
   display: flex;
+  min-width: 0;
+  flex-direction: column;
+  padding: 15px;
+  border: 1px solid var(--sp-border);
+  border-radius: var(--sp-radius);
+  background: var(--sp-white);
+  box-shadow: var(--sp-shadow);
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    transform 180ms ease;
+}
+
+.sponsorship-card:hover {
+  transform: translateY(-2px);
+  border-color: #c5ddd0;
+  box-shadow: 0 7px 20px rgba(24, 63, 54, 0.07);
+}
+
+.sponsorship-card-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 9px;
+  margin-bottom: 13px;
+}
+
+.sponsorship-sponsor-identity {
+  display: flex;
+  min-width: 0;
   align-items: center;
   gap: 10px;
-  min-width: 160px;
 }
 
 .sponsorship-avatar {
-  width: 34px;
-  height: 34px;
-  flex: 0 0 34px;
   display: grid;
+  flex-shrink: 0;
+  width: 39px;
+  height: 39px;
   place-items: center;
-  border-radius: 9px;
-  background: #eeedff;
-  color: #5145cd;
-  font-size: 13px;
+  border: 1px solid #d6e9dd;
+  border-radius: 10px;
+  background: var(--sp-primary-soft);
+  color: var(--sp-primary-dark);
+  font-size: 16px;
   font-weight: 800;
 }
 
-.sponsorship-sponsor-cell > div:last-child {
-  min-width: 0;
+.sponsorship-sponsor-heading {
   display: flex;
+  min-width: 0;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
 }
 
-.sponsorship-sponsor-cell strong {
-  overflow: hidden;
-  max-width: 170px;
-  color: #263247;
-  font-size: 11px;
+.sponsorship-sponsor-heading h4 {
+  margin: 0;
+  color: var(--sp-ink-dark);
+  font-size: 14px;
   font-weight: 750;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
 }
 
-.sponsorship-sponsor-cell span {
-  color: #929baa;
+.sponsorship-sponsor-heading span {
+  color: var(--sp-muted);
   font-size: 10px;
+  overflow-wrap: anywhere;
 }
 
-.sponsorship-event-name {
-  display: inline-block;
-  max-width: 145px;
-  overflow: hidden;
-  color: #526074;
-  text-overflow: ellipsis;
+/* ---------- Status badges ---------- */
+
+.sponsorship-status {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  width: fit-content;
+  max-width: 100%;
+  padding: 4px 8px;
+  border: 1px solid transparent;
+  border-radius: 20px;
+  font-size: 10px;
+  font-weight: 750;
+  line-height: 1.35;
   white-space: nowrap;
+}
+
+.sponsorship-status.pending {
+  border-color: #f3dfb9;
+  background: #fff7e8;
+  color: #a76a18;
+}
+
+.sponsorship-status.confirmed {
+  border-color: #cce8d6;
+  background: #edf8f0;
+  color: #28765d;
+}
+
+.sponsorship-status.partial {
+  border-color: #d7e6f8;
+  background: #edf5ff;
+  color: #3973b8;
+}
+
+.sponsorship-status.paid {
+  border-color: #cce8d6;
+  background: #edf8f0;
+  color: #28765d;
+}
+
+.sponsorship-status.cancelled {
+  border-color: #f0d0cd;
+  background: #fff0ef;
+  color: #b74444;
+}
+
+/* ---------- Event and sponsor details ---------- */
+
+.sponsorship-card-event {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  margin-bottom: 11px;
+  padding: 8px 9px;
+  border-radius: 7px;
+  background: #f5f8f4;
+  color: var(--sp-ink);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.sponsorship-card-event svg {
+  flex-shrink: 0;
+  color: var(--sp-primary);
+}
+
+.sponsorship-card-event span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.sponsorship-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px 10px;
+  min-height: 25px;
+  margin-bottom: 12px;
 }
 
 .sponsorship-tier {
   display: inline-flex;
   align-items: center;
-  padding: 5px 8px;
-  border-radius: 5px;
-  background: #f1f5f9;
-  color: #475569;
+  width: fit-content;
+  padding: 4px 8px;
+  border: 1px solid #dce7dc;
+  border-radius: 20px;
+  background: #f5f8f4;
+  color: #526e60;
   font-size: 10px;
-  font-weight: 700;
-  white-space: nowrap;
+  font-weight: 750;
 }
 
 .tier-title {
-  color: #9a6700;
-  background: #fff4d6;
+  border-color: #e5d4a7;
+  background: #fff8e7;
+  color: #98701f;
 }
 
 .tier-platinum {
-  color: #475569;
-  background: #e9edf3;
+  border-color: #d7dce5;
+  background: #f1f3f7;
+  color: #657083;
 }
 
 .tier-gold {
-  color: #a16207;
-  background: #fef3c7;
+  border-color: #f0dfb1;
+  background: #fff8e8;
+  color: #a87920;
 }
 
 .tier-silver {
-  color: #64748b;
-  background: #f1f5f9;
+  border-color: #dce1e5;
+  background: #f5f7f8;
+  color: #697985;
 }
 
 .tier-bronze {
-  color: #9a4e20;
-  background: #fbe9df;
+  border-color: #e8d1c0;
+  background: #fbf1e9;
+  color: #98613d;
 }
 
-.tier-custom {
-  color: #5b50c8;
-  background: #efedff;
-}
-
-.sponsorship-money {
-  color: #263247 !important;
-  font-size: 11px !important;
-  font-weight: 700;
-  white-space: nowrap;
-}
-
-.received-amount {
-  color: #16834b !important;
-}
-
-.balance-amount {
-  color: #b7791f !important;
-}
-
-.sponsorship-status {
+.sponsorship-contact {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 5px 8px;
-  border-radius: 20px;
-  font-size: 9px;
+  min-width: 0;
+  color: var(--sp-muted);
+  font-size: 10px;
+  overflow-wrap: anywhere;
+}
+
+.sponsorship-contact svg {
+  flex-shrink: 0;
+  color: #8ba39a;
+}
+
+/* ---------- Financial details ---------- */
+
+.sponsorship-card-financials {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: auto;
+  padding: 12px 0;
+  border-top: 1px solid #edf1ec;
+  border-bottom: 1px solid #edf1ec;
+}
+
+.sponsorship-card-financials > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sponsorship-card-financials > div + div {
+  padding-left: 8px;
+  border-left: 1px solid #edf1ec;
+}
+
+.sponsorship-card-financials span {
+  color: var(--sp-muted);
+  font-size: 10px;
+}
+
+.sponsorship-card-financials strong {
+  color: var(--sp-ink-dark);
+  font-size: 12px;
   font-weight: 750;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
-.sponsorship-status.paid {
-  color: #16834b;
-  background: #eaf8ef;
+.sponsorship-card-financials .received-value {
+  color: #28765d;
 }
 
-.sponsorship-status.partial {
-  color: #2563a6;
-  background: #eaf3ff;
+.sponsorship-card-financials .balance-value {
+  color: #a76a18;
 }
 
-.sponsorship-status.confirmed {
-  color: #5b50c8;
-  background: #efedff;
+/* ---------- Payment progress ---------- */
+
+.sponsorship-progress {
+  margin-top: 11px;
 }
 
-.sponsorship-status.pending {
-  color: #a66b13;
-  background: #fff5df;
-}
-
-.sponsorship-status.cancelled {
-  color: #b42318;
-  background: #fff0ef;
-}
-
-.sponsorship-row-actions {
+.sponsorship-progress-label {
   display: flex;
   align-items: center;
-  gap: 6px;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 6px;
 }
 
-.sponsorship-icon-btn {
-  width: 29px;
-  height: 29px;
-  display: grid;
-  place-items: center;
-  border: 1px solid #e9edf3;
-  border-radius: 6px;
-  background: #fff;
-  cursor: pointer;
-  transition: 0.15s ease;
+.sponsorship-progress-label span {
+  color: var(--sp-muted);
+  font-size: 10px;
 }
 
-.sponsorship-icon-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+.sponsorship-progress-label strong {
+  color: var(--sp-primary-dark);
+  font-size: 10px;
+  font-weight: 750;
 }
 
-.edit-action {
-  color: #5262c9;
+.sponsorship-progress-track {
+  width: 100%;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 10px;
+  background: #edf1ec;
 }
 
-.edit-action:not(:disabled):hover {
-  background: #f0efff;
-  border-color: #d9d5ff;
+.sponsorship-progress-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--sp-primary);
+  transition: width 180ms ease;
 }
 
-.delete-action {
-  color: #d14b4b;
+/* ---------- Benefits ---------- */
+
+.sponsorship-card-description {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin-top: 11px;
+  padding: 9px;
+  border: 1px solid #e8eee7;
+  border-radius: 7px;
+  background: #fafcf9;
 }
 
-.delete-action:not(:disabled):hover {
-  background: #fff0ef;
-  border-color: #ffd1ce;
+.sponsorship-card-description svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--sp-muted);
 }
 
-/* EMPTY AND LOADING STATES */
+.sponsorship-card-description p {
+  display: -webkit-box;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: #71867e;
+  font-size: 10px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+/* ---------- Card actions ---------- */
+
+.sponsorship-card-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 13px;
+}
+
+.sponsorship-card-actions button {
+  flex: 1;
+  min-width: 0;
+  min-height: 33px;
+  padding: 6px 9px;
+  font-size: 11px;
+}
+
+/* ---------- Loading and empty states ---------- */
 
 .sponsorship-loading,
-.sponsorship-empty-state {
-  min-height: 240px;
+.sponsorship-empty {
   display: flex;
+  min-height: 180px;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 11px;
-  padding: 35px 20px;
-  color: #8792a3;
+  gap: 8px;
+  padding: 28px 18px;
+  border: 1px dashed #cddbd1;
+  border-radius: var(--sp-radius);
+  background: rgba(255, 255, 255, 0.8);
+  color: var(--sp-muted);
   text-align: center;
 }
 
 .sponsorship-loading {
   flex-direction: row;
+  min-height: 130px;
+  border-style: solid;
+  background: #ffffff;
+  font-size: 12px;
+}
+
+.sponsorship-empty h3 {
+  margin: 0;
+  color: var(--sp-ink-dark);
+  font-size: 16px;
+  font-weight: 750;
+}
+
+.sponsorship-empty p {
+  max-width: 420px;
+  margin: 0 0 7px;
+  color: var(--sp-muted);
   font-size: 12px;
 }
 
 .sponsorship-empty-icon {
-  width: 58px;
-  height: 58px;
   display: grid;
+  width: 54px;
+  height: 54px;
   place-items: center;
-  border-radius: 16px;
-  background: #f1f0ff;
-  color: #6257d6;
+  margin-bottom: 3px;
+  border: 1px solid #dcebe1;
+  border-radius: 14px;
+  background: var(--sp-primary-soft);
+  color: var(--sp-primary);
 }
 
-.sponsorship-empty-state h2,
-.sponsorship-empty-state h3 {
-  margin: 0;
-  color: #263247;
-  font-size: 15px;
-}
-
-.sponsorship-empty-state p {
-  max-width: 380px;
-  margin: 0 0 6px;
-  color: #8b95a5;
-  font-size: 11px;
-  line-height: 1.6;
-}
-
-/* MODAL */
+/* ---------- Modal ---------- */
 
 .sponsorship-modal-backdrop {
   position: fixed;
-  z-index: 1000;
+  z-index: 1200;
   inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 20px;
-  background: rgba(15, 23, 42, 0.55);
-  backdrop-filter: blur(3px);
+  overflow-y: auto;
+  background: rgba(14, 36, 30, 0.48);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
 }
 
 .sponsorship-modal {
-  width: min(760px, 100%);
-  max-height: min(92vh, 900px);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  background: #fff;
-  border: 1px solid rgba(255, 255, 255, 0.4);
-  border-radius: 14px;
-  box-shadow: 0 22px 70px rgba(15, 23, 42, 0.25);
-  animation: sponsorshipModalIn 0.2s ease;
+  position: relative;
+  width: min(100%, 650px);
+  max-height: calc(100dvh - 40px);
+  min-width: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 22px;
+  border: 1px solid rgba(226, 233, 225, 0.9);
+  border-radius: 16px;
+  background: #ffffff;
+  box-shadow: 0 20px 65px rgba(16, 59, 52, 0.2);
+  animation: sponsorship-modal-enter 180ms ease-out;
 }
 
-@keyframes sponsorshipModalIn {
+@keyframes sponsorship-modal-enter {
   from {
     opacity: 0;
-    transform: translateY(10px) scale(0.99);
+    transform: translateY(8px) scale(0.99);
   }
+
   to {
     opacity: 1;
     transform: translateY(0) scale(1);
   }
 }
 
-.sponsorship-modal-header {
+.sponsorship-modal-heading {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 15px;
-  padding: 22px 24px 18px;
-  border-bottom: 1px solid #edf0f5;
+  margin-bottom: 18px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--sp-border);
 }
 
-.sponsorship-modal-header h2 {
+.sponsorship-modal-heading > div {
+  min-width: 0;
+}
+
+.sponsorship-modal-heading h2 {
   margin: 0;
-  color: #1e293b;
-  font-size: 20px;
+  color: var(--sp-ink-dark);
+  font-size: 22px;
   font-weight: 750;
+  letter-spacing: -0.4px;
 }
 
-.sponsorship-modal-header p {
+.sponsorship-modal-heading > div > p:last-child {
   margin: 6px 0 0;
-  color: #8792a3;
+  color: var(--sp-muted);
   font-size: 11px;
 }
 
 .sponsorship-modal-close {
+  display: grid;
+  flex-shrink: 0;
   width: 34px;
   height: 34px;
-  display: grid;
-  flex: 0 0 34px;
   place-items: center;
-  border: 1px solid #e8edf3;
+  padding: 0;
+  border: 1px solid var(--sp-border);
   border-radius: 8px;
-  background: #fff;
-  color: #64748b;
-  cursor: pointer;
+  background: #f8faf7;
+  color: var(--sp-muted);
 }
 
-.sponsorship-modal-close:hover {
-  background: #f8fafc;
+.sponsorship-modal-close:hover:not(:disabled) {
+  border-color: #efcfcb;
+  background: #fff1ef;
+  color: #b74444;
 }
 
-.sponsorship-modal form {
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
+/* ---------- Form sections ---------- */
 
 .sponsorship-form-body {
-  overflow-y: auto;
-  padding: 21px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
 }
 
 .sponsorship-form-section-title {
   display: flex;
   align-items: center;
   gap: 9px;
-  margin: 3px 0 15px;
-  color: #344054;
+  margin-top: 4px;
+  padding-bottom: 9px;
+  border-bottom: 1px solid var(--sp-border);
+  color: var(--sp-ink-dark);
   font-size: 12px;
-  font-weight: 800;
-}
-
-.sponsorship-form-section-title:not(:first-child) {
-  margin-top: 25px;
+  font-weight: 750;
 }
 
 .sponsorship-form-section-title > span {
-  width: 23px;
-  height: 23px;
   display: grid;
+  width: 25px;
+  height: 25px;
+  flex-shrink: 0;
   place-items: center;
-  border-radius: 6px;
-  background: #efedff;
-  color: #574bd0;
+  border-radius: 7px;
+  background: var(--sp-primary-soft);
+  color: var(--sp-primary-dark);
   font-size: 10px;
   font-weight: 800;
 }
@@ -730,210 +939,312 @@
 .sponsorship-form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 15px;
+  gap: 15px 18px;
+  align-items: start;
 }
 
 .sponsorship-field {
-  min-width: 0;
   display: flex;
+  min-width: 0;
   flex-direction: column;
   gap: 7px;
-}
-
-.sponsorship-field.full-width {
-  grid-column: 1 / -1;
+  color: var(--sp-ink-dark);
+  font-size: 11px;
+  font-weight: 700;
 }
 
 .sponsorship-field > span {
   display: flex;
   align-items: center;
   gap: 5px;
-  color: #526074;
-  font-size: 10px;
-  font-weight: 750;
 }
 
-.sponsorship-field > span b {
-  color: #dc4444;
+.sponsorship-field > span svg {
+  color: var(--sp-muted);
+}
+
+.sponsorship-field b {
+  color: #c34d46;
 }
 
 .sponsorship-field input,
 .sponsorship-field select,
 .sponsorship-field textarea {
+  box-sizing: border-box;
   width: 100%;
   min-width: 0;
-  min-height: 39px;
+  min-height: 40px;
   padding: 9px 11px;
+  border: 1px solid #dce6dd;
+  border-radius: 8px;
+  background: #fbfcfa;
+  color: var(--sp-ink);
+  font-size: 12px;
+  font-weight: 400;
   outline: none;
-  border: 1px solid #e2e8f0;
-  border-radius: 7px;
-  background: #fff;
-  color: #263247;
-  font-family: inherit;
-  font-size: 11px;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  transition:
+    border-color 150ms ease,
+    box-shadow 150ms ease,
+    background 150ms ease;
 }
 
 .sponsorship-field textarea {
-  min-height: 75px;
+  min-height: 85px;
   resize: vertical;
   line-height: 1.5;
+}
+
+.sponsorship-field input::placeholder,
+.sponsorship-field textarea::placeholder {
+  color: #9aaba4;
 }
 
 .sponsorship-field input:focus,
 .sponsorship-field select:focus,
 .sponsorship-field textarea:focus {
-  border-color: #8278e8;
-  box-shadow: 0 0 0 3px rgba(99, 91, 214, 0.09);
-}
-
-.sponsorship-field input::placeholder,
-.sponsorship-field textarea::placeholder {
-  color: #a5adba;
+  border-color: var(--sp-primary);
+  background: #ffffff;
+  box-shadow: 0 0 0 3px rgba(37, 135, 115, 0.09);
 }
 
 .sponsorship-field small {
-  color: #8993a3;
-  font-size: 9px;
+  color: var(--sp-muted);
+  font-size: 10px;
+  font-weight: 500;
   line-height: 1.4;
 }
 
+.sponsorship-field.full-width {
+  grid-column: 1 / -1;
+}
+
+/* ---------- Currency inputs ---------- */
+
 .sponsorship-input-with-icon {
-  position: relative;
   display: flex;
   align-items: center;
+  gap: 7px;
+  min-width: 0;
+  min-height: 40px;
+  padding: 0 10px;
+  border: 1px solid #dce6dd;
+  border-radius: 8px;
+  background: #fbfcfa;
+  color: var(--sp-muted);
+}
+
+.sponsorship-input-with-icon:focus-within {
+  border-color: var(--sp-primary);
+  background: #ffffff;
+  box-shadow: 0 0 0 3px rgba(37, 135, 115, 0.09);
 }
 
 .sponsorship-input-with-icon > svg {
-  position: absolute;
-  left: 11px;
-  color: #8792a3;
-  pointer-events: none;
+  flex-shrink: 0;
 }
 
 .sponsorship-input-with-icon input {
-  padding-left: 32px;
+  min-height: 38px;
+  padding: 7px 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
+.sponsorship-input-with-icon input:focus {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+/* ---------- Payment preview ---------- */
+
 .sponsorship-payment-preview {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 15px;
-  padding: 13px 15px;
-  margin-top: 16px;
-  border: 1px solid #e9e9fb;
-  border-radius: 8px;
-  background: #fafaff;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  padding: 13px;
+  border: 1px solid #dcebe1;
+  border-radius: 9px;
+  background: #f5f9f5;
 }
 
 .sponsorship-payment-preview > div {
   display: flex;
+  min-width: 0;
   flex-direction: column;
   align-items: flex-start;
-  gap: 6px;
+  gap: 7px;
 }
 
 .sponsorship-payment-preview > div > span {
-  color: #8792a3;
+  color: var(--sp-muted);
   font-size: 10px;
+  font-weight: 600;
 }
 
 .sponsorship-payment-preview > div > strong:not(.sponsorship-status) {
-  color: #263247;
+  color: var(--sp-ink-dark);
   font-size: 14px;
-  font-weight: 800;
+  font-weight: 750;
+  overflow-wrap: anywhere;
 }
 
-.sponsorship-modal-footer {
+/* ---------- Form actions ---------- */
+
+.sponsorship-form-actions {
   display: flex;
   justify-content: flex-end;
+  align-items: center;
+  flex-wrap: wrap;
   gap: 9px;
-  padding: 15px 24px;
-  border-top: 1px solid #edf0f5;
-  background: #fff;
+  margin-top: 19px;
+  padding-top: 15px;
+  border-top: 1px solid var(--sp-border);
 }
 
-/* ANIMATIONS */
-
-.sp-spin {
-  animation: sponsorshipSpin 0.9s linear infinite;
+.sponsorship-form-actions button {
+  min-width: 110px;
 }
 
-@keyframes sponsorshipSpin {
+/* ---------- Spinner ---------- */
+
+.sponsorship-spin {
+  animation: sponsorship-spin 0.9s linear infinite;
+}
+
+@keyframes sponsorship-spin {
   to {
     transform: rotate(360deg);
   }
 }
 
-/* RESPONSIVE */
+/* ---------- Tablet ---------- */
 
 @media (max-width: 1100px) {
   .sponsorship-stats-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .sponsorship-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .sponsorship-page-header {
+    margin-bottom: 17px;
+  }
 }
 
-@media (max-width: 700px) {
-  .sponsorship-header {
-    flex-direction: column;
-  }
+/* ---------- Tablet / collapsed sidebar ---------- */
 
-  .sponsorship-header-actions {
-    width: 100%;
-  }
-
-  .sponsorship-header-actions .sponsorship-btn {
-    flex: 1;
-  }
-
+@media (max-width: 900px) {
   .sponsorship-toolbar {
-    align-items: stretch;
-  }
-
-  .sponsorship-search {
-    flex-basis: 100%;
-  }
-
-  .sponsorship-filter {
-    flex: 1 1 130px;
+    grid-template-columns: minmax(0, 1fr) minmax(130px, 170px);
   }
 
   .sponsorship-result-count {
-    width: 100%;
-    margin-left: 0;
-  }
-
-  .sponsorship-modal-backdrop {
-    padding: 8px;
-  }
-
-  .sponsorship-modal {
-    max-height: 96vh;
-  }
-
-  .sponsorship-modal-header,
-  .sponsorship-form-body {
-    padding-left: 17px;
-    padding-right: 17px;
-  }
-
-  .sponsorship-modal-footer {
-    padding: 12px 17px;
+    grid-column: 1 / -1;
+    text-align: right;
   }
 }
 
-@media (max-width: 480px) {
+/* ---------- Mobile ---------- */
+
+@media (max-width: 600px) {
+  .sponsorship-page-header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 13px;
+    padding-bottom: 15px;
+  }
+
+  .sponsorship-page-header h2 {
+    font-size: 24px;
+  }
+
+  .sponsorship-header-actions {
+    display: grid;
+    width: 100%;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .sponsorship-header-actions button {
+    width: 100%;
+  }
+
   .sponsorship-stats-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 9px;
   }
 
   .sponsorship-stat-card {
-    min-height: 90px;
+    align-items: flex-start;
+    gap: 9px;
+    padding: 11px;
+  }
+
+  .sponsorship-stat-icon {
+    width: 33px;
+    height: 33px;
+  }
+
+  .sponsorship-stat-content > strong {
+    font-size: 14px;
+  }
+
+  .sponsorship-stat-content > small {
+    font-size: 9px;
+  }
+
+  .sponsorship-toolbar {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 9px;
+    padding: 10px;
+  }
+
+  .sponsorship-search,
+  .sponsorship-filter {
+    width: 100%;
+  }
+
+  .sponsorship-result-count {
+    grid-column: auto;
+    text-align: left;
+  }
+
+  .sponsorship-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 11px;
+  }
+
+  .sponsorship-card {
+    padding: 14px;
+  }
+
+  .sponsorship-modal-backdrop {
+    align-items: flex-start;
+    padding: 10px;
+  }
+
+  .sponsorship-modal {
+    width: 100%;
+    max-height: calc(100dvh - 20px);
+    margin: auto 0;
+    padding: 16px;
+    border-radius: 12px;
+  }
+
+  .sponsorship-modal-heading {
+    margin-bottom: 16px;
+  }
+
+  .sponsorship-modal-heading h2 {
+    font-size: 20px;
   }
 
   .sponsorship-form-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 13px;
   }
 
   .sponsorship-field.full-width {
@@ -941,11 +1252,63 @@
   }
 
   .sponsorship-payment-preview {
+    gap: 8px;
+    padding: 10px;
+  }
+
+  .sponsorship-payment-preview > div > strong:not(.sponsorship-status) {
+    font-size: 12px;
+  }
+
+  .sponsorship-form-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .sponsorship-form-actions button {
+    min-width: 0;
+    width: 100%;
+  }
+}
+
+/* ---------- Small mobile ---------- */
+
+@media (max-width: 360px) {
+  .sponsorship-page-header h2 {
+    font-size: 21px;
+  }
+
+  .sponsorship-stats-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .sponsorship-card-top {
     align-items: flex-start;
     flex-direction: column;
   }
 
-  .sponsorship-modal-header h2 {
-    font-size: 17px;
+  .sponsorship-modal {
+    padding: 13px;
+  }
+
+  .sponsorship-payment-preview {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .sponsorship-form-actions {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ---------- Reduced motion ---------- */
+
+@media (prefers-reduced-motion: reduce) {
+  .sponsorship-page *,
+  .sponsorship-page *::before,
+  .sponsorship-page *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }

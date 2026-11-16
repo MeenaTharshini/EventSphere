@@ -12,10 +12,23 @@ const organizerNavigationItems = [
   { label: "Attendance", icon: "✓", href: "#attendance" },
   { label: "Budget", icon: "₹", href: "#budget" },
   { label: "Vendors", icon: "♙", href: "#vendors" },
-  { label: "Sponsorships", icon: "🤝", href: "#sponsorships" },
+  { label: "Sponsorships", icon: "▣", href: "#sponsorships" },
   { label: "Venues", icon: "⌖", href: "#venues" },
   { label: "Resources", icon: "◇", href: "#resources" },
   { label: "Scheduling", icon: "◷", href: "#scheduling" },
+];
+
+// =========================================================
+// ADMIN NAVIGATION
+// =========================================================
+
+const adminNavigationItems = [
+  ...organizerNavigationItems,
+  {
+    label: "Approvals",
+    icon: "✓",
+    href: "#approvals",
+  },
 ];
 
 // =========================================================
@@ -45,9 +58,10 @@ const attendeeNavigationItems = [
 function getUserRole(user) {
   return String(
     user?.activeRole ||
-    user?.role ||
-    user?.user?.role ||
-    "Attendee"
+      user?.role ||
+      user?.user_role ||
+      user?.user?.role ||
+      "Attendee"
   )
     .trim()
     .toLowerCase();
@@ -60,6 +74,10 @@ function getNavigationItems(role) {
 
     case "attendee":
       return attendeeNavigationItems;
+
+    case "admin":
+    case "administrator":
+      return adminNavigationItems;
 
     case "organizer":
     default:
@@ -87,15 +105,19 @@ export default function Sidebar({
   const userName =
     user?.name ||
     user?.full_name ||
+    user?.username ||
     user?.user?.name ||
     "User";
 
   const userRole =
+    user?.activeRole ||
     user?.role ||
+    user?.user_role ||
     user?.user?.role ||
     "Attendee";
 
-  const initial = userName.charAt(0).toUpperCase();
+  const initial =
+    String(userName).trim().charAt(0).toUpperCase() || "U";
 
   const role = getUserRole(user);
   const navigationItems = getNavigationItems(role);
@@ -154,12 +176,7 @@ export default function Sidebar({
 
   function toggleSidebar() {
     if (isMobile) {
-      if (mobileOpen) {
-        setMobileOpen(false);
-        menuButtonRef.current?.focus();
-      } else {
-        setMobileOpen(true);
-      }
+      setMobileOpen((previous) => !previous);
     } else {
       setCollapsed((previous) => !previous);
     }
@@ -170,9 +187,8 @@ export default function Sidebar({
   // =======================================================
 
   function closeMobileSidebar() {
-    if (isMobile && mobileOpen) {
+    if (isMobile) {
       setMobileOpen(false);
-      menuButtonRef.current?.focus();
     }
   }
 
@@ -208,12 +224,8 @@ export default function Sidebar({
 
   const sidebarClass = [
     "es-sidebar",
-    collapsed && !isMobile
-      ? "es-sidebar-collapsed"
-      : "",
-    mobileOpen && isMobile
-      ? "es-sidebar-mobile-open"
-      : "",
+    collapsed && !isMobile ? "es-sidebar-collapsed" : "",
+    mobileOpen && isMobile ? "es-sidebar-mobile-open" : "",
   ]
     .filter(Boolean)
     .join(" ");
@@ -233,6 +245,7 @@ export default function Sidebar({
   return (
     <>
       {/* Mobile menu button */}
+
       {isMobile && (
         <button
           ref={menuButtonRef}
@@ -249,6 +262,7 @@ export default function Sidebar({
       )}
 
       {/* Mobile overlay */}
+
       {isMobile && mobileOpen && (
         <button
           type="button"
@@ -259,6 +273,7 @@ export default function Sidebar({
       )}
 
       {/* Sidebar */}
+
       <aside
         ref={sidebarRef}
         id="eventsphere-sidebar"
@@ -268,6 +283,7 @@ export default function Sidebar({
         inert={isMobile && !mobileOpen}
       >
         {/* Header */}
+
         <div className="es-sidebar-header">
           <a
             className="es-brand"
@@ -276,10 +292,7 @@ export default function Sidebar({
             title="EventSphere"
             tabIndex={isMobile && !mobileOpen ? -1 : 0}
           >
-            <span
-              className="es-brand-icon"
-              aria-hidden="true"
-            >
+            <span className="es-brand-icon" aria-hidden="true">
               <svg
                 viewBox="0 0 24 24"
                 fill="none"
@@ -324,11 +337,13 @@ export default function Sidebar({
         </div>
 
         {/* Navigation caption */}
+
         <p className="es-sidebar-caption">
           WORKSPACE
         </p>
 
         {/* Navigation */}
+
         <nav
           className="es-sidebar-nav"
           aria-label="Main navigation"
@@ -344,10 +359,7 @@ export default function Sidebar({
                   title={`${item.label} feature coming later`}
                   aria-disabled="true"
                 >
-                  <span
-                    className="es-nav-icon"
-                    aria-hidden="true"
-                  >
+                  <span className="es-nav-icon" aria-hidden="true">
                     {item.icon}
                   </span>
 
@@ -380,10 +392,7 @@ export default function Sidebar({
                 }
                 tabIndex={isMobile && !mobileOpen ? -1 : 0}
               >
-                <span
-                  className="es-nav-icon"
-                  aria-hidden="true"
-                >
+                <span className="es-nav-icon" aria-hidden="true">
                   {item.icon}
                 </span>
 
@@ -396,6 +405,7 @@ export default function Sidebar({
         </nav>
 
         {/* User information and logout */}
+
         <div className="es-sidebar-bottom">
           <div
             className="es-sidebar-user"
@@ -421,10 +431,7 @@ export default function Sidebar({
                 : undefined
             }
           >
-            <span
-              className="es-logout-icon"
-              aria-hidden="true"
-            >
+            <span className="es-logout-icon" aria-hidden="true">
               ↪
             </span>
 
