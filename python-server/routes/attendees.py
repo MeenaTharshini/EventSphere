@@ -136,6 +136,204 @@ def get_event_name(event: dict) -> str:
     )
 
 
+# ---------------------------------------------------------
+# GET ALL ATTENDEES FOR A SPECIFIC EVENT
+# GET /api/attendees/event/{event_id}
+# ---------------------------------------------------------
+
+@router.get("/event/{event_id}")
+def get_event_attendees(
+    event_id: str,
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Retrieve all active registrations for an event.
+
+    Organizer:
+        Can view attendees for their own events.
+
+    Admin:
+        Can view attendees for any event.
+
+    Returns registration details and associated digital tickets.
+    """
+
+    # -----------------------------------------------------
+    # 1. DATABASE CONNECTION
+    # -----------------------------------------------------
+
+    db = request.app.state.db
+
+    attendees_collection = db["attendees"]
+    events_collection = db["events"]
+    tickets_collection = db["tickets"]
+
+    # -----------------------------------------------------
+    # 2. VALIDATE EVENT ID
+    # -----------------------------------------------------
+
+    if not ObjectId.is_valid(event_id):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid event ID.",
+        )
+
+    event_oid = ObjectId(event_id)
+
+    # -----------------------------------------------------
+    # 3. FETCH EVENT
+    # -----------------------------------------------------
+
+    try:
+        event = events_collection.find_one({
+            "_id": event_oid
+        })
+
+    except PyMongoError:
+        raise HTTPException(
+            status_code=503,
+            detail="Unable to retrieve event details.",
+        )
+
+    if not event:
+        raise HTTPException(
+            status_code=404,
+            detail="Event not found.",
+        )
+
+    # -----------------------------------------------------
+    # 4. AUTHORIZATION
+    # -----------------------------------------------------
+
+    role = str(
+        current_user.get("role", "")
+    ).strip().lower()
+
+    if role not in {"admin", "organizer"}:
+        raise HTTPException(
+            status_code=403,
+            detail="Only organizers and admins can view event attendees.",
+        )
+
+    if role == "organizer":
+
+        current_user_id = str(
+            current_user.get("_id")
+            or current_user.get("id")
+            or ""
+        )
+
+        event_owner_id = str(
+            event.get("organizer_id") or ""
+        )
+
+        if not current_user_id or event_owner_id != current_user_id:
+            raise HTTPException(
+                status_code=403,
+                detail="You can only view attendees for your own events.",
+            )
+
+    # -----------------------------------------------------
+    # 5. FETCH ACTIVE REGISTRATIONS
+    # -----------------------------------------------------
+
+    try:
+        attendee_records = list(
+            attendees_collection.find({
+                "event_id": event_id,
+                "status": {"$nin": ["Cancelled", "Canceled"]},
+            }).sort("registered_at", -1)
+        )
+
+    except PyMongoError:
+        raise HTTPException(
+            status_code=503,
+            detail="Unable to retrieve event attendees.",
+        )
+
+    # -----------------------------------------------------
+    # 6. FETCH ASSOCIATED TICKETS
+    # -----------------------------------------------------
+
+    results = []
+
+    for attendee in attendee_records:
+
+        registration_id = str(
+            attendee.get("_id", "")
+        )
+
+        try:
+            ticket = tickets_collection.find_one({
+                "registration_id": registration_id
+            })
+
+        except PyMongoError:
+            raise HTTPException(
+                status_code=503,
+                detail="Unable to retrieve attendee ticket details.",
+            )
+
+        # -------------------------------------------------
+        # 7. BUILD ATTENDEE RESPONSE
+        # -------------------------------------------------
+
+        ticket_data = None
+
+        if ticket:
+
+            ticket_data = {
+                "ticket_id": ticket.get("ticket_id", ""),
+                "status": ticket.get("status", "Valid"),
+                "qr_code": ticket.get("qr_code", ""),
+                "checked_in_at": serialize_datetime(
+                    ticket.get("checked_in_at")
+                ),
+                "created_at": serialize_datetime(
+                    ticket.get("created_at")
+                ),
+            }
+
+        results.append({
+            "attendee_id": registration_id,
+            "registration_id": registration_id,
+            "name": attendee.get("name", ""),
+            "email": attendee.get("email", ""),
+            "phone": attendee.get("phone", ""),
+            "category": attendee.get("category", "General"),
+            "registration_status": attendee.get(
+                "status", "Registered"
+            ),
+            "registered_at": serialize_datetime(
+                attendee.get("registered_at")
+            ),
+            "ticket": ticket_data,
+        })
+
+    # -----------------------------------------------------
+    # 8. RETURN RESPONSE
+    # -----------------------------------------------------
+
+    return {
+        "success": True,
+
+        "event": {
+            "id": event_id,
+            "name": get_event_name(event),
+            "date": serialize_datetime(
+                get_event_date(event)
+            ),
+            "end_date": event.get("end_date") or event.get("event_date") or event.get("date") or "",
+            "start_time": event.get("start_time") or "",
+            "end_time": event.get("end_time") or "",
+            "venue": get_event_venue(event),
+        },
+
+        "attendees": results,
+        "count": len(results),
+    }
+
 def serialize_datetime(value) -> str | None:
     if value is None:
         return None

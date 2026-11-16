@@ -18,18 +18,14 @@ import {
   Inbox,
 } from "lucide-react";
 
-import { apiRequest, getEvents } from "./api";
+import { apiRequest } from "./api";
 import "./Approvals.css";
 
-/* --------------------------------------------------
-   CONSTANTS
--------------------------------------------------- */
+/* -------------------- Constants -------------------- */
 
 const STATUSES = ["All", "Pending", "Approved", "Paid", "Rejected"];
 
-/* --------------------------------------------------
-   HELPERS
--------------------------------------------------- */
+/* -------------------- Helpers -------------------- */
 
 function formatMoney(value) {
   const amount = Number(value ?? 0);
@@ -42,15 +38,11 @@ function formatMoney(value) {
 }
 
 function getId(item) {
-  return String(item?.id ?? item?._id ?? item?.expense_id ?? "");
-}
-
-function getEventId(event) {
   return String(
-    event?.id ??
-    event?._id ??
-    event?.event_id ??
-    ""
+    item?.id ??
+      item?._id ??
+      item?.expense_id ??
+      ""
   );
 }
 
@@ -88,10 +80,17 @@ function getErrorMessage(error) {
     error?.message;
 
   if (Array.isArray(detail)) {
-    return detail.map((item) => item.msg || item.message || "").filter(Boolean).join(", ");
+    return detail
+      .map((item) => item.msg || item.message || "")
+      .filter(Boolean)
+      .join(", ");
   }
 
-  return detail || "Something went wrong. Please try again.";
+  if (typeof detail === "string" && detail.trim()) {
+    return detail;
+  }
+
+  return "Something went wrong. Please try again.";
 }
 
 function getReview(expense) {
@@ -101,74 +100,66 @@ function getReview(expense) {
     reviewer:
       approval.reviewed_by_name ||
       approval.reviewer_name ||
+      approval.reviewed_by ||
       "",
-    reviewedAt:
-      approval.reviewed_at ||
-      "",
+    reviewedAt: approval.reviewed_at || "",
     reason:
       approval.rejection_reason ||
+      approval.reason ||
       "",
   };
 }
 
-function getEventName(event) {
-  return (
-    event?.name ||
-    event?.event_name ||
-    event?.eventName ||
-    event?.title ||
-    "Unknown event"
-  );
-}
-
-function getEventDate(event) {
-  return (
-    event?.event_date ||
-    event?.date ||
-    event?.start_date ||
-    ""
-  );
-}
-
-function getEventsArray(response) {
-  if (Array.isArray(response)) return response;
-  if (Array.isArray(response?.events)) return response.events;
-  if (Array.isArray(response?.data)) return response.data;
-  if (Array.isArray(response?.data?.events)) return response.data.events;
-  if (Array.isArray(response?.results)) return response.results;
-
-  return [];
-}
-
 function getExpensesArray(response) {
   if (Array.isArray(response)) return response;
-  if (Array.isArray(response?.expenses)) return response.expenses;
-  if (Array.isArray(response?.data?.expenses)) return response.data.expenses;
-  if (Array.isArray(response?.data)) return response.data;
-  if (Array.isArray(response?.approvals)) return response.approvals;
+
+  if (Array.isArray(response?.approvals)) {
+    return response.approvals;
+  }
+
+  if (Array.isArray(response?.expenses)) {
+    return response.expenses;
+  }
+
+  if (Array.isArray(response?.data)) {
+    return response.data;
+  }
+
+  if (Array.isArray(response?.data?.approvals)) {
+    return response.data.approvals;
+  }
+
+  if (Array.isArray(response?.data?.expenses)) {
+    return response.data.expenses;
+  }
+
+  if (Array.isArray(response?.results)) {
+    return response.results;
+  }
 
   return [];
 }
 
 function getUpdatedExpense(response) {
+  if (!response) return null;
+
   return (
     response?.expense ||
     response?.data?.expense ||
+    response?.data ||
     null
   );
 }
 
-/* --------------------------------------------------
-   MAIN COMPONENT
--------------------------------------------------- */
+/* -------------------- Approvals Component -------------------- */
 
 export default function Approvals({ user }) {
   const role = String(
     user?.activeRole ??
-    user?.role ??
-    user?.user_role ??
-    user?.user?.role ??
-    ""
+      user?.role ??
+      user?.user_role ??
+      user?.user?.role ??
+      ""
   )
     .trim()
     .toLowerCase();
@@ -188,16 +179,12 @@ export default function Approvals({ user }) {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
-  /* --------------------------------------------------
-     LOAD EXPENSES FROM ALL EVENTS
+  /* -------------------- Load Approvals --------------------
+     GET /api/budgets/approvals
 
-     Backend routes used:
-     GET /events
-     GET /budgets/event/{event_id}
-
-     There is no dependency on a separate
-     GET /budgets/approvals endpoint.
-  -------------------------------------------------- */
+     This endpoint is already implemented in budgets.py.
+     It returns expense requests across events for admins.
+  ---------------------------------------------------------- */
 
   const loadApprovals = useCallback(async (isRefresh = false) => {
     if (isRefresh) {
@@ -210,63 +197,17 @@ export default function Approvals({ user }) {
     setSuccess("");
 
     try {
-      const eventsResponse = await getEvents();
-      const events = getEventsArray(eventsResponse);
+      const response = await apiRequest("/budgets/approvals");
 
-      if (events.length === 0) {
-        setExpenses([]);
-        setSelectedId("");
-        return;
-      }
+      const records = getExpensesArray(response);
 
-      const results = await Promise.allSettled(
-        events.map(async (event) => {
-          const eventId = getEventId(event);
+      const validExpenses = records
+        .filter((expense) => getId(expense))
+        .map((expense) => ({
+          ...expense,
+          status: normalizeStatus(expense.status),
+        }));
 
-          if (!eventId) {
-            return [];
-          }
-
-          const budgetResponse = await apiRequest(
-            `/budgets/event/${encodeURIComponent(eventId)}`
-          );
-
-          const eventExpenses = getExpensesArray(budgetResponse);
-
-          return eventExpenses.map((expense) => ({
-            ...expense,
-            event_id: expense.event_id || eventId,
-            event_name:
-              expense.event_name ||
-              budgetResponse?.event?.name ||
-              budgetResponse?.event?.event_name ||
-              budgetResponse?.data?.event?.name ||
-              getEventName(event),
-            event_date:
-              expense.event_date ||
-              budgetResponse?.event?.event_date ||
-              budgetResponse?.event?.date ||
-              budgetResponse?.data?.event?.event_date ||
-              getEventDate(event),
-            status: normalizeStatus(expense.status),
-          }));
-        })
-      );
-
-      const successfulResults = results
-        .filter((result) => result.status === "fulfilled")
-        .flatMap((result) => result.value);
-
-      const failedRequests = results.filter(
-        (result) => result.status === "rejected"
-      );
-
-      // Remove records without an identifiable expense ID.
-      const validExpenses = successfulResults.filter(
-        (expense) => getId(expense)
-      );
-
-      // Sort newest requests first.
       validExpenses.sort((a, b) => {
         const dateA = new Date(
           a.created_at || a.expense_date || 0
@@ -295,18 +236,6 @@ export default function Approvals({ user }) {
 
         return getId(firstPending || validExpenses[0]) || "";
       });
-
-      if (failedRequests.length > 0) {
-        if (validExpenses.length > 0) {
-          setError(
-            `Some event expense records could not be loaded (${failedRequests.length} of ${events.length}). The available records are displayed.`
-          );
-        } else {
-          setError(
-            "Unable to load expense requests from the events. Please check the backend and try again."
-          );
-        }
-      }
     } catch (err) {
       setError(getErrorMessage(err));
       setExpenses([]);
@@ -317,10 +246,6 @@ export default function Approvals({ user }) {
     }
   }, []);
 
-  /* --------------------------------------------------
-     INITIAL LOAD
-  -------------------------------------------------- */
-
   useEffect(() => {
     if (isAdmin) {
       loadApprovals();
@@ -329,29 +254,20 @@ export default function Approvals({ user }) {
     }
   }, [isAdmin, loadApprovals]);
 
-  /* --------------------------------------------------
-     SUMMARY COUNTS
-  -------------------------------------------------- */
+  /* -------------------- Summary -------------------- */
 
   const counts = useMemo(() => {
+    const countBy = (status) =>
+      expenses.filter(
+        (item) => normalizeStatus(item.status) === status
+      ).length;
+
     return {
       total: expenses.length,
-
-      pending: expenses.filter(
-        (item) => normalizeStatus(item.status) === "Pending"
-      ).length,
-
-      approved: expenses.filter(
-        (item) => normalizeStatus(item.status) === "Approved"
-      ).length,
-
-      rejected: expenses.filter(
-        (item) => normalizeStatus(item.status) === "Rejected"
-      ).length,
-
-      paid: expenses.filter(
-        (item) => normalizeStatus(item.status) === "Paid"
-      ).length,
+      pending: countBy("Pending"),
+      approved: countBy("Approved"),
+      rejected: countBy("Rejected"),
+      paid: countBy("Paid"),
     };
   }, [expenses]);
 
@@ -366,9 +282,7 @@ export default function Approvals({ user }) {
       );
   }, [expenses]);
 
-  /* --------------------------------------------------
-     SEARCH AND FILTER
-  -------------------------------------------------- */
+  /* -------------------- Search and Filter -------------------- */
 
   const filteredExpenses = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -394,16 +308,14 @@ export default function Approvals({ user }) {
         .join(" ")
         .toLowerCase();
 
-      const matchesSearch =
-        !query || searchable.includes(query);
-
-      return matchesStatus && matchesSearch;
+      return (
+        matchesStatus &&
+        (!query || searchable.includes(query))
+      );
     });
   }, [expenses, search, statusFilter]);
 
-  /* --------------------------------------------------
-     SELECTED EXPENSE
-  -------------------------------------------------- */
+  /* -------------------- Selected Expense -------------------- */
 
   const selectedExpense = useMemo(() => {
     return (
@@ -424,9 +336,7 @@ export default function Approvals({ user }) {
     }
   }, [selectedExpense, selectedId]);
 
-  /* --------------------------------------------------
-     UPDATE EXPENSE LOCALLY
-  -------------------------------------------------- */
+  /* -------------------- Update Local Expense -------------------- */
 
   const updateExpense = useCallback(
     (id, updatedExpense, fallback = {}) => {
@@ -445,9 +355,7 @@ export default function Approvals({ user }) {
     []
   );
 
-  /* --------------------------------------------------
-     APPROVE EXPENSE
-  -------------------------------------------------- */
+  /* -------------------- Approve Expense -------------------- */
 
   const handleApprove = async (expense) => {
     const id = getId(expense);
@@ -478,14 +386,20 @@ export default function Approvals({ user }) {
         }
       );
 
-      updateExpense(id, getUpdatedExpense(response), {
-        status: "Approved",
-      });
+      const updatedExpense = getUpdatedExpense(response);
+
+      updateExpense(
+        id,
+        updatedExpense,
+        {
+          status: "Approved",
+        }
+      );
 
       setSuccess(
         response?.message ||
-        response?.data?.message ||
-        "Expense approved successfully."
+          response?.data?.message ||
+          "Expense approved successfully."
       );
     } catch (err) {
       setError(getErrorMessage(err));
@@ -494,9 +408,7 @@ export default function Approvals({ user }) {
     }
   };
 
-  /* --------------------------------------------------
-     REJECT EXPENSE
-  -------------------------------------------------- */
+  /* -------------------- Reject Expense -------------------- */
 
   const handleReject = async (expense) => {
     const id = getId(expense);
@@ -573,8 +485,8 @@ export default function Approvals({ user }) {
 
       setSuccess(
         response?.message ||
-        response?.data?.message ||
-        "Expense rejected successfully."
+          response?.data?.message ||
+          "Expense rejected successfully."
       );
     } catch (err) {
       setError(getErrorMessage(err));
@@ -583,13 +495,11 @@ export default function Approvals({ user }) {
     }
   };
 
-  /* --------------------------------------------------
-     ACCESS CONTROL
-  -------------------------------------------------- */
+  /* -------------------- Access Control -------------------- */
 
   if (!isAdmin) {
     return (
-      <main className="approvals-page">
+      <section className="approvals-page">
         <div className="approvals-access">
           <ShieldCheck size={34} />
 
@@ -599,13 +509,9 @@ export default function Approvals({ user }) {
             Only administrators can review and decide expense requests.
           </p>
         </div>
-      </main>
+      </section>
     );
   }
-
-  /* --------------------------------------------------
-     SELECTED REQUEST DETAILS
-  -------------------------------------------------- */
 
   const selectedStatus = selectedExpense
     ? normalizeStatus(selectedExpense.status)
@@ -619,54 +525,44 @@ export default function Approvals({ user }) {
     selectedExpense &&
     processingId === getId(selectedExpense);
 
-  /* --------------------------------------------------
-     PAGE UI
-  -------------------------------------------------- */
+  /* -------------------- Render -------------------- */
 
   return (
-    <main className="approvals-page">
-
-      {/* PAGE HEADER */}
-
-      <header className="approvals-header">
+    <section className="approvals-page">
+      <header className="approvals-page-header">
         <div>
-          <div className="approvals-breadcrumb">
-            Workspace <span>/</span> Finance <span>/</span> Approvals
-          </div>
-
-          <div className="approvals-title-row">
-            <div>
-              <h1>Expense Approvals</h1>
-
-              <p>
-                Review, verify and manage expense requests across your events.
-              </p>
-            </div>
-
-            <button
-              type="button"
-              className="approvals-refresh"
-              onClick={() => loadApprovals(true)}
-              disabled={loading || refreshing}
-            >
-              <RefreshCw
-                size={16}
-                className={
-                  refreshing ? "approvals-rotating" : ""
-                }
-              />
-
-              {refreshing ? "Refreshing" : "Refresh"}
-            </button>
-          </div>
+          <p className="approvals-eyebrow">FINANCE</p>
+          <h2>Expense Approvals</h2>
+          <p>
+            Review, verify and manage expense requests across your events.
+          </p>
         </div>
+
+        <button
+          type="button"
+          className="approvals-secondary-button"
+          onClick={() => loadApprovals(true)}
+          disabled={loading || refreshing}
+        >
+          <RefreshCw
+            size={14}
+            className={
+              refreshing ? "approvals-rotating" : ""
+            }
+          />
+
+          {refreshing ? "Refreshing..." : "Refresh"}
+        </button>
       </header>
 
-      {/* FEEDBACK */}
+      {/* Alerts */}
 
       {error && (
-        <div className="approvals-notice error">
-          <AlertCircle size={17} />
+        <div
+          className="approvals-alert approvals-alert-error"
+          role="alert"
+        >
+          <AlertCircle size={15} />
 
           <span>{error}</span>
 
@@ -681,8 +577,11 @@ export default function Approvals({ user }) {
       )}
 
       {success && (
-        <div className="approvals-notice success">
-          <CheckCircle2 size={17} />
+        <div
+          className="approvals-alert approvals-alert-success"
+          role="status"
+        >
+          <CheckCircle2 size={15} />
 
           <span>{success}</span>
 
@@ -696,29 +595,27 @@ export default function Approvals({ user }) {
         </div>
       )}
 
-      {/* FINANCIAL OVERVIEW */}
+      {/* Overview */}
 
       <section className="approvals-overview">
         <div className="approvals-overview-heading">
           <div>
-            <span className="approvals-eyebrow">
+            <p className="approvals-eyebrow">
               FINANCIAL OVERVIEW
-            </span>
-
-            <h2>Approval activity</h2>
+            </p>
+            <h3>Approval activity</h3>
           </div>
 
           <div className="approvals-total-count">
-            <span>{counts.total}</span>
-            <small>Total requests</small>
+            <strong>{counts.total}</strong>
+            <span>Total requests</span>
           </div>
         </div>
 
         <div className="approvals-metrics">
-
           <div className="approvals-metric pending">
             <span className="approvals-metric-icon">
-              <Clock3 size={17} />
+              <Clock3 size={16} />
             </span>
 
             <div>
@@ -729,7 +626,7 @@ export default function Approvals({ user }) {
 
           <div className="approvals-metric approved">
             <span className="approvals-metric-icon">
-              <CheckCircle2 size={17} />
+              <CheckCircle2 size={16} />
             </span>
 
             <div>
@@ -740,7 +637,7 @@ export default function Approvals({ user }) {
 
           <div className="approvals-metric rejected">
             <span className="approvals-metric-icon">
-              <XCircle size={17} />
+              <XCircle size={16} />
             </span>
 
             <div>
@@ -751,7 +648,7 @@ export default function Approvals({ user }) {
 
           <div className="approvals-metric paid">
             <span className="approvals-metric-icon">
-              <Wallet size={17} />
+              <Wallet size={16} />
             </span>
 
             <div>
@@ -762,30 +659,22 @@ export default function Approvals({ user }) {
 
           <div className="approvals-pending-value">
             <span>Pending value</span>
-
             <strong>{formatMoney(pendingAmount)}</strong>
-
             <small>Amount awaiting decision</small>
           </div>
-
         </div>
       </section>
 
-      {/* REVIEW WORKSPACE */}
+      {/* Workspace */}
 
       <section className="approvals-workspace">
-
         {/* LEFT: REQUEST QUEUE */}
 
         <aside className="approvals-queue">
-
           <div className="approvals-queue-heading">
             <div>
-              <span className="approvals-eyebrow">
-                INBOX
-              </span>
-
-              <h2>Request queue</h2>
+              <p className="approvals-eyebrow">INBOX</p>
+              <h3>Request queue</h3>
             </div>
 
             <span className="approvals-queue-count">
@@ -793,52 +682,45 @@ export default function Approvals({ user }) {
             </span>
           </div>
 
-          {/* SEARCH */}
+          <div className="approvals-queue-controls">
+            <div className="approvals-search">
+              <Search size={15} />
 
-          <div className="approvals-search">
-            <Search size={17} />
-
-            <input
-              type="search"
-              placeholder="Search requests..."
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-            />
-          </div>
-
-          {/* STATUS FILTER */}
-
-          <div className="approvals-status-select">
-            <label htmlFor="approvals-status">
-              Filter by status
-            </label>
+              <input
+                type="search"
+                placeholder="Search requests..."
+                aria-label="Search requests"
+                value={search}
+                onChange={(event) =>
+                  setSearch(event.target.value)
+                }
+              />
+            </div>
 
             <select
-              id="approvals-status"
+              aria-label="Filter requests by status"
               value={statusFilter}
-              onChange={(event) => setStatusFilter(event.target.value)}
+              onChange={(event) =>
+                setStatusFilter(event.target.value)
+              }
             >
               {STATUSES.map((status) => (
                 <option key={status} value={status}>
-                  {status}
+                  {status === "All" ? "All statuses" : status}
                 </option>
               ))}
             </select>
           </div>
 
-          {/* REQUEST LIST */}
-
           <div className="approvals-queue-list">
-
             {loading ? (
               <div className="approvals-queue-message">
                 <div className="approvals-spinner" />
-
                 <span>Loading requests...</span>
               </div>
             ) : filteredExpenses.length === 0 ? (
               <div className="approvals-queue-message">
-                <Inbox size={27} />
+                <Inbox size={26} />
 
                 <strong>No requests found</strong>
 
@@ -849,6 +731,7 @@ export default function Approvals({ user }) {
                 {(search || statusFilter !== "All") && (
                   <button
                     type="button"
+                    className="approvals-secondary-button"
                     onClick={() => {
                       setSearch("");
                       setStatusFilter("All");
@@ -869,7 +752,9 @@ export default function Approvals({ user }) {
                   <button
                     type="button"
                     key={id}
-                    className={`approvals-queue-item ${active ? "active" : ""}`}
+                    className={`approvals-queue-item ${
+                      active ? "active" : ""
+                    }`}
                     onClick={() => setSelectedId(id)}
                   >
                     <div className="approvals-queue-item-top">
@@ -878,7 +763,9 @@ export default function Approvals({ user }) {
                       </span>
 
                       <span
-                        className={`approvals-status ${statusClass(status)}`}
+                        className={`approvals-status status-${statusClass(
+                          status
+                        )}`}
                       >
                         {status}
                       </span>
@@ -890,13 +777,13 @@ export default function Approvals({ user }) {
 
                     <span className="approvals-queue-event">
                       <Building2 size={13} />
-
                       {expense.event_name || "Unknown event"}
                     </span>
 
                     <div className="approvals-queue-item-bottom">
                       <span>
-                        {expense.requested_by_name || "Unknown requester"}
+                        {expense.requested_by_name ||
+                          "Unknown requester"}
                       </span>
 
                       <strong>
@@ -907,104 +794,102 @@ export default function Approvals({ user }) {
                 );
               })
             )}
-
           </div>
 
           <div className="approvals-queue-footer">
-            Showing {filteredExpenses.length} of {expenses.length} requests
+            Showing {filteredExpenses.length} of{" "}
+            {expenses.length} requests
           </div>
-
         </aside>
 
         {/* RIGHT: REQUEST DETAILS */}
 
         <section className="approvals-detail-panel">
-
           {!selectedExpense ? (
             <div className="approvals-detail-empty">
               <div className="approvals-detail-empty-icon">
-                <FileText size={30} />
+                <FileText size={28} />
               </div>
 
-              <h2>Select an expense request</h2>
+              <h3>Select an expense request</h3>
 
               <p>
-                Choose a request from the queue to inspect its details
-                and review its approval status.
+                Choose a request from the queue to inspect its
+                details and review its approval status.
               </p>
             </div>
           ) : (
             <>
-
-              {/* REQUEST HEADER */}
+              {/* Detail header */}
 
               <div className="approvals-detail-header">
                 <div>
-                  <span className="approvals-eyebrow">
+                  <p className="approvals-eyebrow">
                     REQUEST DETAILS
-                  </span>
+                  </p>
 
                   <div className="approvals-detail-title-row">
-                    <h2>
-                      {selectedExpense.description || "Untitled expense"}
-                    </h2>
+                    <h3>
+                      {selectedExpense.description ||
+                        "Untitled expense"}
+                    </h3>
 
                     <span
-                      className={`approvals-status ${statusClass(selectedStatus)}`}
+                      className={`approvals-status status-${statusClass(
+                        selectedStatus
+                      )}`}
                     >
                       {selectedStatus}
                     </span>
                   </div>
 
-                  <p>
-                    Request ID: {getId(selectedExpense) || "Unavailable"}
+                  <p className="approvals-detail-id">
+                    Request ID:{" "}
+                    {getId(selectedExpense) || "Unavailable"}
                   </p>
                 </div>
 
                 <div className="approvals-detail-mark">
-                  <Wallet size={22} />
+                  <Wallet size={20} />
                 </div>
               </div>
 
-              {/* AMOUNT */}
+              {/* Amount */}
 
               <div className="approvals-amount-panel">
                 <div>
                   <span>Expense amount</span>
-
                   <strong>
                     {formatMoney(selectedExpense.amount)}
                   </strong>
                 </div>
 
                 <span className="approvals-amount-label">
-                  <Tag size={14} />
-
-                  {selectedExpense.category || "Uncategorized"}
+                  <Tag size={13} />
+                  {selectedExpense.category ||
+                    "Uncategorized"}
                 </span>
               </div>
 
-              {/* EVENT INFORMATION */}
+              {/* Event information */}
 
               <div className="approvals-detail-section">
                 <div className="approvals-section-title">
-                  <Building2 size={17} />
-
-                  <h3>Event information</h3>
+                  <Building2 size={16} />
+                  <h4>Event information</h4>
                 </div>
 
                 <div className="approvals-info-grid">
                   <div className="approvals-info-field">
                     <span>Event name</span>
-
                     <strong>
-                      {selectedExpense.event_name || "Unknown event"}
+                      {selectedExpense.event_name ||
+                        "Unknown event"}
                     </strong>
                   </div>
 
                   <div className="approvals-info-field">
                     <span>Event date</span>
-
                     <strong>
                       {formatDate(selectedExpense.event_date)}
                     </strong>
@@ -1012,15 +897,14 @@ export default function Approvals({ user }) {
 
                   <div className="approvals-info-field">
                     <span>Event ID</span>
-
                     <strong className="approvals-id-text">
-                      {selectedExpense.event_id || "Not available"}
+                      {selectedExpense.event_id ||
+                        "Not available"}
                     </strong>
                   </div>
 
                   <div className="approvals-info-field">
                     <span>Expense date</span>
-
                     <strong>
                       {formatDate(selectedExpense.expense_date)}
                     </strong>
@@ -1028,27 +912,26 @@ export default function Approvals({ user }) {
                 </div>
               </div>
 
-              {/* REQUEST INFORMATION */}
+              {/* Request information */}
 
               <div className="approvals-detail-section">
                 <div className="approvals-section-title">
-                  <UserRound size={17} />
-
-                  <h3>Request information</h3>
+                  <UserRound size={16} />
+                  <h4>Request information</h4>
                 </div>
 
                 <div className="approvals-info-grid">
                   <div className="approvals-info-field">
                     <span>Submitted by</span>
-
                     <strong>
-                      {selectedExpense.requested_by_name || "Unknown"}
+                      {selectedExpense.requested_by_name ||
+                        selectedExpense.requested_by ||
+                        "Unknown"}
                     </strong>
                   </div>
 
                   <div className="approvals-info-field">
                     <span>Submitted on</span>
-
                     <strong>
                       {formatDate(selectedExpense.created_at)}
                     </strong>
@@ -1056,47 +939,48 @@ export default function Approvals({ user }) {
                 </div>
               </div>
 
-              {/* LINKED ITEM */}
+              {/* Linked item */}
 
               <div className="approvals-detail-section">
                 <div className="approvals-section-title">
-                  <Link2 size={17} />
-
-                  <h3>Linked event item</h3>
+                  <Link2 size={16} />
+                  <h4>Linked event item</h4>
                 </div>
 
                 {selectedExpense.linked_item_type ||
                 selectedExpense.linked_item_name ? (
                   <div className="approvals-linked-item">
                     <div className="approvals-linked-icon">
-                      <ArrowUpRight size={18} />
+                      <ArrowUpRight size={17} />
                     </div>
 
                     <div>
                       <strong>
-                        {selectedExpense.linked_item_name || "Linked item"}
+                        {selectedExpense.linked_item_name ||
+                          "Linked item"}
                       </strong>
 
                       <span>
-                        {selectedExpense.linked_item_type || "Other"}
+                        {selectedExpense.linked_item_type ||
+                          "Other"}
                       </span>
                     </div>
                   </div>
                 ) : (
                   <div className="approvals-no-linked">
-                    No venue, resource or vendor is linked to this expense.
+                    No venue, resource or vendor is linked to
+                    this expense.
                   </div>
                 )}
               </div>
 
-              {/* ORGANIZER NOTES */}
+              {/* Notes */}
 
               {selectedExpense.notes && (
                 <div className="approvals-detail-section">
                   <div className="approvals-section-title">
-                    <FileText size={17} />
-
-                    <h3>Organizer notes</h3>
+                    <FileText size={16} />
+                    <h4>Organizer notes</h4>
                   </div>
 
                   <div className="approvals-notes-box">
@@ -1105,22 +989,21 @@ export default function Approvals({ user }) {
                 </div>
               )}
 
-              {/* REJECTION REASON */}
+              {/* Rejection reason */}
 
               {selectedStatus === "Rejected" &&
                 selectedReview.reason && (
                   <div className="approvals-decision-box rejected">
                     <strong>Rejection reason</strong>
-
                     <p>{selectedReview.reason}</p>
                   </div>
                 )}
 
-              {/* REVIEW RECORD */}
+              {/* Review record */}
 
               {selectedStatus !== "Pending" && (
                 <div className="approvals-review-record">
-                  <ShieldCheck size={18} />
+                  <ShieldCheck size={17} />
 
                   <div>
                     <strong>Review completed</strong>
@@ -1131,54 +1014,68 @@ export default function Approvals({ user }) {
                         : "Reviewer information unavailable"}
 
                       {selectedReview.reviewedAt
-                        ? ` · ${formatDate(selectedReview.reviewedAt)}`
+                        ? ` · ${formatDate(
+                            selectedReview.reviewedAt
+                          )}`
                         : ""}
                     </span>
                   </div>
                 </div>
               )}
 
-              {/* ADMIN DECISION */}
+              {/* Admin decision */}
 
               {selectedStatus === "Pending" && (
                 <div className="approvals-decision-area">
                   <div className="approvals-decision-copy">
-                    <span className="approvals-eyebrow">
+                    <p className="approvals-eyebrow">
                       ADMIN DECISION
-                    </span>
+                    </p>
 
-                    <h3>Review this expense request</h3>
+                    <h4>Review this expense request</h4>
 
                     <p>
-                      Verify the submitted details before approving or rejecting.
+                      Verify the submitted details before
+                      approving or rejecting.
                     </p>
                   </div>
 
                   <div className="approvals-decision-buttons">
                     <button
                       type="button"
-                      className="approvals-decline"
-                      onClick={() => handleReject(selectedExpense)}
+                      className="approvals-danger-button"
+                      onClick={() =>
+                        handleReject(selectedExpense)
+                      }
                       disabled={Boolean(processingId)}
                     >
-                      <XCircle size={17} />
+                      {isProcessing ? (
+                        <RefreshCw
+                          size={15}
+                          className="approvals-rotating"
+                        />
+                      ) : (
+                        <XCircle size={15} />
+                      )}
 
                       Reject request
                     </button>
 
                     <button
                       type="button"
-                      className="approvals-accept"
-                      onClick={() => handleApprove(selectedExpense)}
+                      className="approvals-primary-button"
+                      onClick={() =>
+                        handleApprove(selectedExpense)
+                      }
                       disabled={Boolean(processingId)}
                     >
                       {isProcessing ? (
                         <RefreshCw
-                          size={17}
+                          size={15}
                           className="approvals-rotating"
                         />
                       ) : (
-                        <CheckCircle2 size={17} />
+                        <CheckCircle2 size={15} />
                       )}
 
                       {isProcessing
@@ -1188,13 +1085,10 @@ export default function Approvals({ user }) {
                   </div>
                 </div>
               )}
-
             </>
           )}
-
         </section>
-
       </section>
-    </main>
+    </section>
   );
 }

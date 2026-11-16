@@ -13,7 +13,6 @@ import {
   AlertCircle,
   Ban,
   CalendarDays,
-  Camera,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
@@ -21,11 +20,16 @@ import {
   Download,
   Eye,
   LoaderCircle,
+  Mail,
+  MapPin,
+  Phone,
   RefreshCw,
   ScanLine,
   Search,
   ShieldCheck,
+  Tag,
   Ticket,
+  User,
   Users,
   X,
 } from "lucide-react";
@@ -55,6 +59,8 @@ const ATTENDANCE_FILTER = {
   CANCELLED: "Cancelled",
   UNKNOWN: "Unknown",
 };
+
+/* -------------------- Auth / API helpers -------------------- */
 
 function getToken() {
   return (
@@ -136,12 +142,26 @@ async function apiRequest(path, options = {}) {
   return data;
 }
 
+/* -------------------- Ticket field helpers -------------------- */
+
 function ticketId(ticket) {
   return String(
     ticket?.ticket_id ||
       ticket?.ticketId ||
       ticket?.id ||
       ticket?._id ||
+      ""
+  );
+}
+
+function registrationId(ticket) {
+  return String(
+    ticket?.registration_id ||
+      ticket?.registrationId ||
+      ticket?.attendee_id ||
+      ticket?.attendeeId ||
+      ticket?.registration?.id ||
+      ticket?.registration?._id ||
       ""
   );
 }
@@ -172,6 +192,27 @@ function attendeeEmail(ticket) {
     ticket?.registration?.email ||
     ticket?.registration?.attendee_email ||
     "—"
+  );
+}
+
+function attendeePhoneFromTicket(ticket) {
+  return (
+    ticket?.attendee_phone ||
+    ticket?.attendeePhone ||
+    ticket?.phone ||
+    ticket?.attendee?.phone ||
+    ticket?.registration?.phone ||
+    ""
+  );
+}
+
+function attendeeCategoryFromTicket(ticket) {
+  return (
+    ticket?.category ||
+    ticket?.attendee_category ||
+    ticket?.attendee?.category ||
+    ticket?.registration?.category ||
+    ""
   );
 }
 
@@ -254,11 +295,7 @@ function checkInDate(ticket) {
 
 /**
  * Determines whether an event has already passed.
- *
- * If the backend supplies only a date, the event is considered past
- * after that calendar day ends.
- *
- * If the backend supplies a timestamp, that timestamp is used.
+ * Date-only values count as passed once that calendar day ends.
  */
 function hasEventPassed(ticket) {
   const rawDate = getRawEventDate(ticket);
@@ -324,9 +361,7 @@ function normalizeStatus(ticket) {
 function getAttendanceStatus(ticket) {
   const status = normalizeStatus(ticket);
 
-  if (status === STATUS.USED) {
-    return ATTENDANCE_FILTER.PRESENT;
-  }
+  if (status === STATUS.USED) return ATTENDANCE_FILTER.PRESENT;
 
   if (status === STATUS.VALID) {
     return hasEventPassed(ticket)
@@ -334,9 +369,7 @@ function getAttendanceStatus(ticket) {
       : ATTENDANCE_FILTER.PENDING;
   }
 
-  if (status === STATUS.CANCELLED) {
-    return ATTENDANCE_FILTER.CANCELLED;
-  }
+  if (status === STATUS.CANCELLED) return ATTENDANCE_FILTER.CANCELLED;
 
   return ATTENDANCE_FILTER.UNKNOWN;
 }
@@ -399,6 +432,16 @@ function qrTicketCode(value) {
   }
 }
 
+function qrImageSource(qr) {
+  const value = String(qr || "");
+
+  if (value.startsWith("data:") || value.startsWith("http")) {
+    return value;
+  }
+
+  return `data:image/png;base64,${value}`;
+}
+
 function downloadCSV(tickets, selectedEventName = "All events") {
   const headings = [
     "Event",
@@ -450,27 +493,21 @@ function downloadCSV(tickets, selectedEventName = "All events") {
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-/**
- * Pie chart built with CSS conic-gradient.
- * Present and absent use green shades.
- * Cancelled tickets and future pending tickets are excluded.
- */
+/* -------------------- Small components -------------------- */
+
 function AttendancePieChart({ present, absent }) {
   const total = present + absent;
 
-  const presentPercentage =
-    total > 0 ? (present / total) * 100 : 0;
-
-  const absentPercentage =
-    total > 0 ? (absent / total) * 100 : 0;
+  const presentPercentage = total > 0 ? (present / total) * 100 : 0;
+  const absentPercentage = total > 0 ? (absent / total) * 100 : 0;
 
   const chartStyle = {
     background:
       total === 0
-        ? "conic-gradient(#e5e7eb 0deg 360deg)"
+        ? "conic-gradient(#e5ebe6 0deg 360deg)"
         : `conic-gradient(
-            #15803d 0% ${presentPercentage}%,
-            #86efac ${presentPercentage}% 100%
+            #258773 0% ${presentPercentage}%,
+            #a9d8c9 ${presentPercentage}% 100%
           )`,
   };
 
@@ -478,19 +515,12 @@ function AttendancePieChart({ present, absent }) {
     <section className="attendance-panel attendance-chart-panel">
       <div className="attendance-panel-heading">
         <div>
-          <span className="attendance-section-kicker">
-            ATTENDANCE OVERVIEW
-          </span>
+          <span className="attendance-section-kicker">OVERVIEW</span>
 
           <h2>
-            <Activity size={20} />
+            <Activity size={16} />
             Present vs Absent
           </h2>
-
-          <p>
-            Attendance for registered attendees, excluding cancelled tickets
-            and future event registrations.
-          </p>
         </div>
       </div>
 
@@ -538,11 +568,11 @@ function AttendancePieChart({ present, absent }) {
             </span>
           </div>
 
-          {total === 0 && (
-            <p className="attendance-chart-empty">
-              No completed-event attendance data available yet.
-            </p>
-          )}
+          <p className="attendance-chart-note">
+            {total === 0
+              ? "No completed-event attendance yet."
+              : "Excludes cancelled and upcoming registrations."}
+          </p>
         </div>
       </div>
     </section>
@@ -554,13 +584,13 @@ function StatusBadge({ ticket }) {
 
   const icon =
     status === STATUS.VALID ? (
-      <CheckCircle2 size={14} />
+      <CheckCircle2 size={12} />
     ) : status === STATUS.USED ? (
-      <ClipboardCheck size={14} />
+      <ClipboardCheck size={12} />
     ) : status === STATUS.CANCELLED ? (
-      <Ban size={14} />
+      <Ban size={12} />
     ) : (
-      <AlertCircle size={14} />
+      <AlertCircle size={12} />
     );
 
   return (
@@ -580,15 +610,15 @@ function AttendanceBadge({ ticket }) {
 
   const icon =
     attendance === ATTENDANCE_FILTER.PRESENT ? (
-      <CheckCircle2 size={14} />
+      <CheckCircle2 size={12} />
     ) : attendance === ATTENDANCE_FILTER.ABSENT ? (
-      <AlertCircle size={14} />
+      <AlertCircle size={12} />
     ) : attendance === ATTENDANCE_FILTER.PENDING ? (
-      <CalendarDays size={14} />
+      <CalendarDays size={12} />
     ) : attendance === ATTENDANCE_FILTER.CANCELLED ? (
-      <Ban size={14} />
+      <Ban size={12} />
     ) : (
-      <AlertCircle size={14} />
+      <AlertCircle size={12} />
     );
 
   return (
@@ -606,18 +636,17 @@ function AttendanceBadge({ ticket }) {
 function StatCard({ icon, label, value, description, variant }) {
   return (
     <article className="attendance-stat-card">
-      <div className="attendance-stat-top">
-        <span>{label}</span>
+      <span
+        className={`attendance-stat-icon attendance-stat-icon--${variant}`}
+      >
+        {icon}
+      </span>
 
-        <span
-          className={`attendance-stat-icon attendance-stat-icon--${variant}`}
-        >
-          {icon}
-        </span>
+      <div className="attendance-stat-copy">
+        <span className="attendance-stat-label">{label}</span>
+        <strong className="attendance-stat-value">{value}</strong>
+        <small>{description}</small>
       </div>
-
-      <strong className="attendance-stat-value">{value}</strong>
-      <small>{description}</small>
     </article>
   );
 }
@@ -631,7 +660,20 @@ function DetailRow({ label, value }) {
   );
 }
 
-function Spinner({ size = 16 }) {
+function ProfileSection({ icon, title, children }) {
+  return (
+    <section className="attendance-profile-section">
+      <h3>
+        {icon}
+        {title}
+      </h3>
+
+      <div>{children}</div>
+    </section>
+  );
+}
+
+function Spinner({ size = 14 }) {
   return (
     <LoaderCircle
       size={size}
@@ -640,6 +682,8 @@ function Spinner({ size = 16 }) {
     />
   );
 }
+
+/* -------------------- Page -------------------- */
 
 export default function Attendance() {
   const user = getUser();
@@ -667,6 +711,13 @@ export default function Attendance() {
   const [verification, setVerification] = useState(null);
   const [actionLoading, setActionLoading] = useState("");
 
+  // Attendee profile (opened by clicking an attendee name)
+  const [profileTicket, setProfileTicket] = useState(null);
+  const [profileDetails, setProfileDetails] = useState(null);
+  const [profileEvent, setProfileEvent] = useState(null);
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [profileError, setProfileError] = useState("");
+
   const [ticketCode, setTicketCode] = useState("");
   const [scannedTicket, setScannedTicket] = useState(null);
   const [scannerOpen, setScannerOpen] = useState(false);
@@ -676,6 +727,9 @@ export default function Attendance() {
 
   const scannerRef = useRef(null);
   const scanHandledRef = useRef(false);
+  const searchTicketRef = useRef(null);
+  const profileRequestRef = useRef(0);
+  const eventAttendeesCache = useRef(new Map());
 
   const loadTickets = useCallback(async ({ silent = false } = {}) => {
     if (silent) {
@@ -689,6 +743,9 @@ export default function Attendance() {
     try {
       const data = await apiRequest("/tickets");
       setTickets(extractTickets(data));
+
+      // Registration details may have changed.
+      eventAttendeesCache.current.clear();
     } catch (err) {
       setError(err.message || "Unable to load tickets.");
     } finally {
@@ -728,18 +785,14 @@ export default function Attendance() {
     );
   }, [tickets]);
 
-  // Tickets belonging to the selected event.
   const eventTickets = useMemo(() => {
-    if (selectedEventId === "all") {
-      return tickets;
-    }
+    if (selectedEventId === "all") return tickets;
 
     return tickets.filter(
       (ticket) => eventId(ticket) === selectedEventId
     );
   }, [tickets, selectedEventId]);
 
-  // Attendance statistics for the selected event or all events.
   const statistics = useMemo(() => {
     const result = {
       total: 0,
@@ -834,6 +887,11 @@ export default function Attendance() {
     selectedEvent?.name ||
     (selectedEventId === "all" ? "All events" : "Selected event");
 
+  const hasActiveFilters =
+    Boolean(search) ||
+    attendanceFilter !== ATTENDANCE_FILTER.ALL ||
+    selectedEventId !== "all";
+
   const updateTicketLocally = (id, patch) => {
     const targetId = String(id);
 
@@ -845,17 +903,14 @@ export default function Attendance() {
       )
     );
 
-    setActiveTicket((previous) =>
+    const patchIfMatch = (previous) =>
       previous && ticketId(previous) === targetId
         ? { ...previous, ...patch }
-        : previous
-    );
+        : previous;
 
-    setScannedTicket((previous) =>
-      previous && ticketId(previous) === targetId
-        ? { ...previous, ...patch }
-        : previous
-    );
+    setActiveTicket(patchIfMatch);
+    setScannedTicket(patchIfMatch);
+    setProfileTicket(patchIfMatch);
   };
 
   const openTicket = (ticket) => {
@@ -871,6 +926,173 @@ export default function Attendance() {
     setActiveTicket(null);
     setVerification(null);
   };
+
+  /* -------------------- Attendee profile -------------------- */
+
+  const openProfile = async (ticket) => {
+    const requestId = profileRequestRef.current + 1;
+    profileRequestRef.current = requestId;
+
+    setProfileTicket(ticket);
+    setProfileDetails(null);
+    setProfileEvent(null);
+    setProfileError("");
+    setError("");
+    setNotice("");
+
+    // The registration endpoint is restricted to organizers/admins.
+    if (!isOrganizer) return;
+
+    const evId = eventId(ticket);
+
+    if (!evId) return;
+
+    setProfileLoading(true);
+
+    try {
+      let payload = eventAttendeesCache.current.get(evId);
+
+      if (!payload) {
+        payload = await apiRequest(
+          `/attendees/event/${encodeURIComponent(evId)}`
+        );
+
+        eventAttendeesCache.current.set(evId, payload);
+      }
+
+      // Ignore stale responses if another profile was opened meanwhile.
+      if (profileRequestRef.current !== requestId) return;
+
+      const list = Array.isArray(payload?.attendees)
+        ? payload.attendees
+        : [];
+
+      const regId = registrationId(ticket);
+      const email = String(attendeeEmail(ticket)).trim().toLowerCase();
+      const tId = ticketId(ticket);
+
+      const match =
+        list.find(
+          (item) => regId && String(item.attendee_id) === regId
+        ) ||
+        list.find((item) => tId && item.ticket?.ticket_id === tId) ||
+        list.find(
+          (item) =>
+            email && String(item.email || "").trim().toLowerCase() === email
+        ) ||
+        null;
+
+      setProfileDetails(match);
+      setProfileEvent(payload?.event || null);
+
+      if (!match) {
+        setProfileError(
+          "Registration details were not found for this attendee."
+        );
+      }
+    } catch (err) {
+      if (profileRequestRef.current === requestId) {
+        setProfileError(
+          err.message || "Unable to load registration details."
+        );
+      }
+    } finally {
+      if (profileRequestRef.current === requestId) {
+        setProfileLoading(false);
+      }
+    }
+  };
+
+  const closeProfile = () => {
+    if (actionLoading) return;
+
+    profileRequestRef.current += 1;
+
+    setProfileTicket(null);
+    setProfileDetails(null);
+    setProfileEvent(null);
+    setProfileError("");
+    setProfileLoading(false);
+  };
+
+  // Close dialogs with the Escape key.
+  useEffect(() => {
+    if (!profileTicket && !activeTicket) return undefined;
+
+    const onKeyDown = (event) => {
+      if (event.key !== "Escape" || actionLoading) return;
+
+      if (activeTicket) {
+        setActiveTicket(null);
+        setVerification(null);
+      } else {
+        profileRequestRef.current += 1;
+        setProfileTicket(null);
+        setProfileDetails(null);
+        setProfileEvent(null);
+        setProfileError("");
+        setProfileLoading(false);
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [profileTicket, activeTicket, actionLoading]);
+
+  // Other registrations made by the same attendee (matched by email).
+  const otherRegistrations = useMemo(() => {
+    if (!profileTicket) return [];
+
+    const email = String(attendeeEmail(profileTicket))
+      .trim()
+      .toLowerCase();
+
+    if (!email || email === "—") return [];
+
+    const currentId = ticketId(profileTicket);
+
+    return tickets.filter(
+      (ticket) =>
+        ticketId(ticket) !== currentId &&
+        String(attendeeEmail(ticket)).trim().toLowerCase() === email
+    );
+  }, [tickets, profileTicket]);
+
+  const profileSummary = useMemo(() => {
+    if (!profileTicket) return null;
+
+    const email = String(attendeeEmail(profileTicket))
+      .trim()
+      .toLowerCase();
+
+    const all = tickets.filter(
+      (ticket) =>
+        email &&
+        email !== "—" &&
+        String(attendeeEmail(ticket)).trim().toLowerCase() === email
+    );
+
+    const list = all.length ? all : [profileTicket];
+
+    return {
+      registrations: list.length,
+      present: list.filter(
+        (ticket) =>
+          getAttendanceStatus(ticket) === ATTENDANCE_FILTER.PRESENT
+      ).length,
+      absent: list.filter(
+        (ticket) =>
+          getAttendanceStatus(ticket) === ATTENDANCE_FILTER.ABSENT
+      ).length,
+      cancelled: list.filter(
+        (ticket) =>
+          getAttendanceStatus(ticket) === ATTENDANCE_FILTER.CANCELLED
+      ).length,
+    };
+  }, [tickets, profileTicket]);
+
+  /* -------------------- Ticket actions -------------------- */
 
   const verifyTicket = async (ticket) => {
     if (!isOrganizer) {
@@ -1023,7 +1245,6 @@ export default function Attendance() {
       });
 
       setVerification(null);
-
       setNotice(result?.message || "Ticket cancelled successfully.");
     } catch (err) {
       setError(err.message || "Unable to cancel ticket.");
@@ -1031,6 +1252,8 @@ export default function Attendance() {
       setActionLoading("");
     }
   };
+
+  /* -------------------- Lookup and scanner -------------------- */
 
   const findTicketInList = useCallback(
     (value) => {
@@ -1093,9 +1316,7 @@ export default function Attendance() {
           "Ticket found. Review the details before marking attendance."
         );
       } else if (attendance === ATTENDANCE_FILTER.PENDING) {
-        setScannerMessage(
-          "Ticket found. The event has not passed yet."
-        );
+        setScannerMessage("Ticket found. The event has not passed yet.");
       } else {
         setScannerMessage("The ticket status could not be confirmed.");
       }
@@ -1105,6 +1326,9 @@ export default function Attendance() {
       setLookupLoading(false);
     }
   };
+
+  // Always point to the latest version so the scanner callback never uses stale data.
+  searchTicketRef.current = searchTicketCode;
 
   const stopQrScanner = useCallback(async () => {
     const scanner = scannerRef.current;
@@ -1164,7 +1388,7 @@ export default function Attendance() {
           { facingMode: "environment" },
           {
             fps: 10,
-            qrbox: { width: 230, height: 230 },
+            qrbox: { width: 220, height: 220 },
             aspectRatio: 1,
           },
           async (decodedText) => {
@@ -1189,7 +1413,7 @@ export default function Attendance() {
 
             setTicketCode(decodedCode);
 
-            await searchTicketCode(decodedCode);
+            await searchTicketRef.current?.(decodedCode);
           },
           () => {
             // Ignore normal scan-frame misses.
@@ -1300,41 +1524,87 @@ export default function Attendance() {
     setNotice("Attendance CSV downloaded successfully.");
   };
 
+  const clearFilters = () => {
+    setSearch("");
+    setAttendanceFilter(ATTENDANCE_FILTER.ALL);
+    setSelectedEventId("all");
+  };
+
+  /* -------------------- Login gate -------------------- */
+
   if (!authenticated) {
     return (
       <main className="attendance-page">
-        
-
         <section className="attendance-panel attendance-login-message">
-          <ShieldCheck size={30} />
+          <ShieldCheck size={26} />
 
           <div>
             <h2>Login required</h2>
-            <p>
-              Please log in to view attendance and ticket information.
-            </p>
+            <p>Please log in to view attendance and ticket information.</p>
           </div>
         </section>
       </main>
     );
   }
 
+  /* -------------------- Profile values -------------------- */
+
+  const profile = profileTicket
+    ? {
+        name:
+          profileDetails?.name ||
+          attendeeName(profileTicket),
+        email:
+          profileDetails?.email ||
+          attendeeEmail(profileTicket),
+        phone:
+          profileDetails?.phone ||
+          attendeePhoneFromTicket(profileTicket),
+        category:
+          profileDetails?.category ||
+          attendeeCategoryFromTicket(profileTicket),
+        registrationStatus:
+          profileDetails?.registration_status ||
+          profileTicket?.registration_status ||
+          "",
+        registeredAt: formatDate(
+          profileDetails?.registered_at ||
+            profileTicket?.registered_at ||
+            profileTicket?.registeredAt,
+          true
+        ),
+        registrationId:
+          profileDetails?.attendee_id || registrationId(profileTicket),
+        venue:
+          profileEvent?.venue ||
+          profileTicket?.venue ||
+          profileTicket?.event?.venue ||
+          profileTicket?.location ||
+          "",
+        eventDate:
+          profileEvent?.date && profileEvent.date !== ""
+            ? formatDate(profileEvent.date)
+            : eventDate(profileTicket),
+        qr:
+          profileTicket?.qr_code ||
+          profileDetails?.ticket?.qr_code ||
+          "",
+      }
+    : null;
+
+  /* -------------------- Render -------------------- */
+
   return (
     <main className="attendance-page">
-      
-
       <header className="attendance-header">
         <div className="attendance-heading-copy">
-          <div className="attendance-eyebrow">
-            
-            EVENTSPHERE MANAGEMENT
-          </div>
+          <p className="attendance-eyebrow">EVENTSPHERE MANAGEMENT</p>
 
           <h1>Attendance &amp; Tickets</h1>
 
-          <p>
+          <p className="attendance-subtitle">
             {isOrganizer
-              ? "View event registrations, track attendance, and check attendees in."
+              ? "View registrations, track attendance, and check attendees in."
               : isAttendee
               ? "View your tickets and their current attendance status."
               : "View the ticket information available to your account."}
@@ -1348,7 +1618,7 @@ export default function Attendance() {
             onClick={() => loadTickets({ silent: true })}
             disabled={loading || refreshing}
           >
-            {refreshing ? <Spinner /> : <RefreshCw size={16} />}
+            {refreshing ? <Spinner /> : <RefreshCw size={14} />}
             Refresh
           </button>
 
@@ -1359,7 +1629,7 @@ export default function Attendance() {
               onClick={handleExport}
               disabled={!filteredTickets.length}
             >
-              <Download size={16} />
+              <Download size={14} />
               Export CSV
             </button>
           )}
@@ -1371,7 +1641,7 @@ export default function Attendance() {
           className="attendance-alert attendance-alert--error"
           role="alert"
         >
-          <AlertCircle size={18} />
+          <AlertCircle size={16} />
           <span>{error}</span>
 
           <button
@@ -1379,7 +1649,7 @@ export default function Attendance() {
             aria-label="Dismiss error"
             onClick={() => setError("")}
           >
-            <X size={16} />
+            <X size={14} />
           </button>
         </div>
       )}
@@ -1389,7 +1659,7 @@ export default function Attendance() {
           className="attendance-alert attendance-alert--success"
           role="status"
         >
-          <CheckCircle2 size={18} />
+          <CheckCircle2 size={16} />
           <span>{notice}</span>
 
           <button
@@ -1397,64 +1667,15 @@ export default function Attendance() {
             aria-label="Dismiss message"
             onClick={() => setNotice("")}
           >
-            <X size={16} />
+            <X size={14} />
           </button>
         </div>
       )}
 
-      {/* Event selector */}
-      {isOrganizer && (
-        <section className="attendance-panel attendance-event-selector">
-          <div className="attendance-panel-heading">
-            <div>
-              <span className="attendance-section-kicker">
-                EVENT ATTENDANCE
-              </span>
-
-              <h2>
-                <CalendarDays size={20} />
-                Select an event
-              </h2>
-
-              <p>
-                Choose an event to see its registered attendees and
-                attendance.
-              </p>
-            </div>
-          </div>
-
-          <label
-            className="attendance-filter attendance-event-select"
-            htmlFor="attendance-event-select"
-          >
-            <span>Event</span>
-
-            <select
-              id="attendance-event-select"
-              value={selectedEventId}
-              onChange={(event) =>
-                setSelectedEventId(event.target.value)
-              }
-            >
-              <option value="all">All events</option>
-
-              {events.map((event) => (
-                <option key={event.id} value={event.id}>
-                  {event.name}
-                  {event.date && event.date !== "—"
-                    ? ` · ${event.date}`
-                    : ""}
-                </option>
-              ))}
-            </select>
-          </label>
-        </section>
-      )}
-
-      {/* Attendance statistics */}
+      {/* Statistics */}
       <section className="attendance-stat-grid">
         <StatCard
-          icon={<Users size={20} />}
+          icon={<Users size={17} />}
           label="Registered"
           value={statistics.total + statistics.pending}
           description="Active registrations"
@@ -1462,7 +1683,7 @@ export default function Attendance() {
         />
 
         <StatCard
-          icon={<CheckCircle2 size={20} />}
+          icon={<CheckCircle2 size={17} />}
           label="Present"
           value={statistics.present}
           description="Checked in"
@@ -1470,175 +1691,139 @@ export default function Attendance() {
         />
 
         <StatCard
-          icon={<AlertCircle size={20} />}
+          icon={<AlertCircle size={17} />}
           label="Absent"
           value={statistics.absent}
           description="Event has passed"
-          variant="purple"
+          variant="amber"
         />
 
         <StatCard
-          icon={<Ban size={20} />}
+          icon={<Ban size={17} />}
           label="Cancelled"
           value={statistics.cancelled}
           description="Cancelled tickets"
-          variant="orange"
+          variant="red"
         />
       </section>
 
-      {/* Green-shaded attendance pie chart */}
+      {/* Chart + check-in desk side by side */}
       {isOrganizer && (
-        <AttendancePieChart
-          present={statistics.present}
-          absent={statistics.absent}
-        />
-      )}
+        <section className="attendance-top-grid">
+          <AttendancePieChart
+            present={statistics.present}
+            absent={statistics.absent}
+          />
 
-      {isOrganizer && (
-        <section className="attendance-panel attendance-checkin-panel">
-          <div className="attendance-panel-heading">
-            <div>
-              <span className="attendance-section-kicker">
-                CHECK-IN DESK
+          <section className="attendance-panel attendance-checkin-panel">
+            <div className="attendance-panel-heading">
+              <div>
+                <span className="attendance-section-kicker">
+                  CHECK-IN DESK
+                </span>
+
+                <h2>
+                  <ScanLine size={16} />
+                  Event check-in
+                </h2>
+              </div>
+
+              <span className="attendance-enabled-badge">
+                <span />
+                Check-in enabled
               </span>
-
-              <h2>
-                <ScanLine size={20} />
-                Event check-in
-              </h2>
-
-              <p>
-                Scan an attendee's QR code or search by ticket ID.
-              </p>
             </div>
 
-            <span className="attendance-enabled-badge">
-              <span />
-              Check-in enabled
-            </span>
-          </div>
+            <form
+              className="attendance-lookup"
+              onSubmit={(event) => {
+                event.preventDefault();
+                searchTicketCode();
+              }}
+            >
+              <label htmlFor="attendance-ticket-code">Ticket ID</label>
 
-          <div className="attendance-scanner-layout">
-            <div className="attendance-scanner-box">
-              {scannerOpen ? (
-                <div className="attendance-camera-active">
-                  {scannerStarting && (
-                    <div className="attendance-camera-loading">
-                      <Spinner size={20} />
-                      Starting camera…
-                    </div>
-                  )}
+              <div className="attendance-code-input">
+                <input
+                  id="attendance-ticket-code"
+                  type="text"
+                  placeholder="EVT-19B5E50C"
+                  value={ticketCode}
+                  onChange={(event) => setTicketCode(event.target.value)}
+                />
 
-                  <div id={SCANNER_ID} />
+                <button
+                  type="submit"
+                  className="attendance-button attendance-button--primary"
+                  disabled={lookupLoading || !ticketCode.trim()}
+                >
+                  {lookupLoading ? <Spinner /> : <Search size={14} />}
+                  Verify
+                </button>
 
+                {scannerOpen ? (
                   <button
                     type="button"
                     className="attendance-button attendance-button--secondary"
                     onClick={stopQrScanner}
                   >
-                    <X size={16} />
-                    Stop scanner
+                    <X size={14} />
+                    Stop
                   </button>
-                </div>
-              ) : (
-                <div className="attendance-scanner-placeholder">
-                  <div className="attendance-scanner-icon">
-                    <Camera size={30} />
-                  </div>
-
-                  <h3>Scan attendee ticket</h3>
-
-                  <p>
-                    Position the attendee's QR code inside the camera
-                    frame.
-                  </p>
-
+                ) : (
                   <button
                     type="button"
-                    className="attendance-button attendance-button--primary"
+                    className="attendance-button attendance-button--secondary"
                     onClick={startQrScanner}
                   >
-                    <ScanLine size={16} />
-                    Open QR scanner
+                    <ScanLine size={14} />
+                    Scan QR
                   </button>
-                </div>
-              )}
-            </div>
-
-            <div className="attendance-code-search">
-              <div className="attendance-search-heading">
-                <span className="attendance-search-heading-icon">
-                  <Search size={20} />
-                </span>
-
-                <div>
-                  <h3>Find a ticket</h3>
-                  <p>Use the code printed on the ticket.</p>
-                </div>
+                )}
               </div>
+            </form>
 
-              <form
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  searchTicketCode();
-                }}
-              >
-                <label htmlFor="attendance-ticket-code">
-                  Ticket ID
-                </label>
+            {scannerOpen && (
+              <div className="attendance-camera">
+                {scannerStarting && (
+                  <div className="attendance-camera-loading">
+                    <Spinner size={16} />
+                    Starting camera…
+                  </div>
+                )}
 
-                <div className="attendance-code-input">
-                  <input
-                    id="attendance-ticket-code"
-                    type="text"
-                    placeholder="EVT-19B5E50C"
-                    value={ticketCode}
-                    onChange={(event) =>
-                      setTicketCode(event.target.value)
-                    }
-                  />
+                <div id={SCANNER_ID} />
+              </div>
+            )}
 
-                  <button
-                    type="submit"
-                    className="attendance-button attendance-button--primary"
-                    disabled={lookupLoading || !ticketCode.trim()}
-                  >
-                    {lookupLoading ? <Spinner /> : <Search size={16} />}
-                    Verify
-                  </button>
-                </div>
-              </form>
+            {scannerMessage && (
+              <div className="attendance-scanner-message" role="status">
+                <CheckCircle2 size={14} />
+                {scannerMessage}
+              </div>
+            )}
 
-              {scannerMessage && (
-                <div
-                  className="attendance-scanner-message"
-                  role="status"
-                >
-                  <CheckCircle2 size={16} />
-                  {scannerMessage}
-                </div>
-              )}
-
-              {scannedTicket && (
-                <div className="attendance-scanned-ticket">
-                  <div className="attendance-scanned-heading">
-                    <span className="attendance-scanned-icon">
-                      <CheckCircle2 size={20} />
-                    </span>
-
-                    <div>
-                      <h3>Attendee details</h3>
-                      <p>{ticketId(scannedTicket)}</p>
-                    </div>
-
-                    <AttendanceBadge ticket={scannedTicket} />
+            {scannedTicket && (
+              <div className="attendance-scanned-ticket">
+                <div className="attendance-scanned-heading">
+                  <div>
+                    <h3>
+                      <button
+                        type="button"
+                        className="attendance-name-link"
+                        title="View attendee details"
+                        onClick={() => openProfile(scannedTicket)}
+                      >
+                        {attendeeName(scannedTicket)}
+                      </button>
+                    </h3>
+                    <p>{ticketId(scannedTicket)}</p>
                   </div>
 
-                  <DetailRow
-                    label="Name"
-                    value={attendeeName(scannedTicket)}
-                  />
+                  <AttendanceBadge ticket={scannedTicket} />
+                </div>
 
+                <div className="attendance-scanned-details">
                   <DetailRow
                     label="Email"
                     value={attendeeEmail(scannedTicket)}
@@ -1661,27 +1846,27 @@ export default function Attendance() {
                       value={checkInDate(scannedTicket)}
                     />
                   )}
-
-                  {normalizeStatus(scannedTicket) === STATUS.VALID && (
-                    <button
-                      type="button"
-                      className="attendance-button attendance-button--primary attendance-checkin-button"
-                      disabled={Boolean(actionLoading)}
-                      onClick={() => checkInTicket(scannedTicket)}
-                    >
-                      {actionLoading ===
-                      `checkin:${ticketId(scannedTicket)}` ? (
-                        <Spinner />
-                      ) : (
-                        <ClipboardCheck size={17} />
-                      )}
-                      Mark attendance
-                    </button>
-                  )}
                 </div>
-              )}
-            </div>
-          </div>
+
+                {normalizeStatus(scannedTicket) === STATUS.VALID && (
+                  <button
+                    type="button"
+                    className="attendance-button attendance-button--primary attendance-checkin-button"
+                    disabled={Boolean(actionLoading)}
+                    onClick={() => checkInTicket(scannedTicket)}
+                  >
+                    {actionLoading ===
+                    `checkin:${ticketId(scannedTicket)}` ? (
+                      <Spinner />
+                    ) : (
+                      <ClipboardCheck size={14} />
+                    )}
+                    Mark attendance
+                  </button>
+                )}
+              </div>
+            )}
+          </section>
         </section>
       )}
 
@@ -1694,29 +1879,34 @@ export default function Attendance() {
             </span>
 
             <h2>
-              <Users size={20} />
+              <Users size={16} />
               {selectedEventId === "all"
                 ? "Attendee records"
                 : "Event attendees"}
             </h2>
-
-            <p>
-              {filteredTickets.length}{" "}
-              {filteredTickets.length === 1 ? "attendee" : "attendees"} found
-              {isOrganizer ? ` · ${attendancePercentage}% present` : ""}
-            </p>
           </div>
+
+          <p className="attendance-records-count">
+            {filteredTickets.length}{" "}
+            {filteredTickets.length === 1 ? "attendee" : "attendees"}
+            {isOrganizer ? ` · ${attendancePercentage}% present` : ""}
+          </p>
         </div>
 
-        <div className="attendance-toolbar">
+        <div
+          className={`attendance-toolbar ${
+            isOrganizer ? "" : "attendance-toolbar--no-event"
+          }`}
+        >
           <label className="attendance-search">
-            <Search size={17} />
+            <Search size={15} />
 
             <input
               type="search"
               placeholder="Search attendee, email, ticket..."
               value={search}
               onChange={(event) => setSearch(event.target.value)}
+              aria-label="Search attendees"
             />
 
             {search && (
@@ -1725,55 +1915,55 @@ export default function Attendance() {
                 aria-label="Clear search"
                 onClick={() => setSearch("")}
               >
-                <X size={15} />
+                <X size={13} />
               </button>
             )}
           </label>
 
-          <label className="attendance-filter">
-            <span>Attendance</span>
-
+          {isOrganizer && (
             <select
-              value={attendanceFilter}
-              onChange={(event) =>
-                setAttendanceFilter(event.target.value)
-              }
+              className="attendance-select"
+              aria-label="Filter by event"
+              value={selectedEventId}
+              onChange={(event) => setSelectedEventId(event.target.value)}
             >
-              <option value={ATTENDANCE_FILTER.ALL}>
-                All attendees
-              </option>
+              <option value="all">All events</option>
 
-              <option value={ATTENDANCE_FILTER.PRESENT}>
-                Present
-              </option>
-
-              <option value={ATTENDANCE_FILTER.ABSENT}>
-                Absent
-              </option>
-
-              <option value={ATTENDANCE_FILTER.PENDING}>
-                Pending
-              </option>
-
-              <option value={ATTENDANCE_FILTER.CANCELLED}>
-                Cancelled
-              </option>
+              {events.map((event) => (
+                <option key={event.id} value={event.id}>
+                  {event.name}
+                  {event.date && event.date !== "—"
+                    ? ` · ${event.date}`
+                    : ""}
+                </option>
+              ))}
             </select>
-          </label>
+          )}
+
+          <select
+            className="attendance-select"
+            aria-label="Filter by attendance"
+            value={attendanceFilter}
+            onChange={(event) => setAttendanceFilter(event.target.value)}
+          >
+            <option value={ATTENDANCE_FILTER.ALL}>All attendance</option>
+            <option value={ATTENDANCE_FILTER.PRESENT}>Present</option>
+            <option value={ATTENDANCE_FILTER.ABSENT}>Absent</option>
+            <option value={ATTENDANCE_FILTER.PENDING}>Pending</option>
+            <option value={ATTENDANCE_FILTER.CANCELLED}>Cancelled</option>
+          </select>
         </div>
 
         {loading ? (
           <div className="attendance-empty">
-            <Spinner size={30} />
+            <Spinner size={26} />
             <h3>Loading attendees</h3>
-            <p>
-              Please wait while we retrieve registration records.
-            </p>
+            <p>Please wait while we retrieve registration records.</p>
           </div>
         ) : filteredTickets.length === 0 ? (
           <div className="attendance-empty">
             <span className="attendance-empty-icon">
-              <Ticket size={28} />
+              <Ticket size={22} />
             </span>
 
             <h3>No attendees found</h3>
@@ -1784,17 +1974,11 @@ export default function Attendance() {
                 : "Registered attendees will appear here when tickets are available."}
             </p>
 
-            {(search ||
-              attendanceFilter !== ATTENDANCE_FILTER.ALL ||
-              selectedEventId !== "all") && (
+            {hasActiveFilters && (
               <button
                 type="button"
                 className="attendance-button attendance-button--secondary"
-                onClick={() => {
-                  setSearch("");
-                  setAttendanceFilter(ATTENDANCE_FILTER.ALL);
-                  setSelectedEventId("all");
-                }}
+                onClick={clearFilters}
               >
                 Clear filters
               </button>
@@ -1806,8 +1990,8 @@ export default function Attendance() {
               <table className="attendance-table">
                 <thead>
                   <tr>
-                    <th>Ticket</th>
                     <th>Attendee</th>
+                    <th>Ticket</th>
                     {selectedEventId === "all" && <th>Event</th>}
                     <th>Event date</th>
                     <th>Attendance</th>
@@ -1822,22 +2006,7 @@ export default function Attendance() {
                     const status = normalizeStatus(ticket);
 
                     return (
-                      <tr
-                        key={
-                          id ||
-                          `${index}-${attendeeEmail(ticket)}`
-                        }
-                      >
-                        <td>
-                          <button
-                            type="button"
-                            className="attendance-ticket-id"
-                            onClick={() => openTicket(ticket)}
-                          >
-                            {id || "No ID"}
-                          </button>
-                        </td>
-
+                      <tr key={id || `${index}-${attendeeEmail(ticket)}`}>
                         <td>
                           <div className="attendance-attendee">
                             <span className="attendance-avatar">
@@ -1847,10 +2016,28 @@ export default function Attendance() {
                             </span>
 
                             <div className="attendance-attendee-copy">
-                              <strong>{attendeeName(ticket)}</strong>
+                              <button
+                                type="button"
+                                className="attendance-name-link"
+                                title="View attendee details"
+                                onClick={() => openProfile(ticket)}
+                              >
+                                {attendeeName(ticket)}
+                              </button>
+
                               <small>{attendeeEmail(ticket)}</small>
                             </div>
                           </div>
+                        </td>
+
+                        <td>
+                          <button
+                            type="button"
+                            className="attendance-ticket-id"
+                            onClick={() => openTicket(ticket)}
+                          >
+                            {id || "No ID"}
+                          </button>
                         </td>
 
                         {selectedEventId === "all" && (
@@ -1863,7 +2050,7 @@ export default function Attendance() {
 
                         <td>
                           <span className="attendance-date">
-                            <CalendarDays size={14} />
+                            <CalendarDays size={12} />
                             {eventDate(ticket)}
                           </span>
                         </td>
@@ -1885,7 +2072,7 @@ export default function Attendance() {
                               aria-label="View ticket"
                               onClick={() => openTicket(ticket)}
                             >
-                              <Eye size={16} />
+                              <Eye size={14} />
                             </button>
 
                             {isOrganizer && (
@@ -1895,15 +2082,13 @@ export default function Attendance() {
                                   className="attendance-icon-button attendance-icon-button--success"
                                   title="Verify ticket"
                                   aria-label="Verify ticket"
-                                  disabled={
-                                    !id || Boolean(actionLoading)
-                                  }
+                                  disabled={!id || Boolean(actionLoading)}
                                   onClick={() => verifyTicket(ticket)}
                                 >
                                   {actionLoading === `verify:${id}` ? (
-                                    <Spinner />
+                                    <Spinner size={13} />
                                   ) : (
-                                    <ShieldCheck size={16} />
+                                    <ShieldCheck size={14} />
                                   )}
                                 </button>
 
@@ -1919,9 +2104,9 @@ export default function Attendance() {
                                   onClick={() => checkInTicket(ticket)}
                                 >
                                   {actionLoading === `checkin:${id}` ? (
-                                    <Spinner />
+                                    <Spinner size={13} />
                                   ) : (
-                                    <ClipboardCheck size={16} />
+                                    <ClipboardCheck size={14} />
                                   )}
                                 </button>
 
@@ -1937,9 +2122,9 @@ export default function Attendance() {
                                   onClick={() => cancelTicket(ticket)}
                                 >
                                   {actionLoading === `cancel:${id}` ? (
-                                    <Spinner />
+                                    <Spinner size={13} />
                                   ) : (
-                                    <Ban size={16} />
+                                    <Ban size={14} />
                                   )}
                                 </button>
                               </>
@@ -1956,10 +2141,7 @@ export default function Attendance() {
             <footer className="attendance-pagination">
               <span>
                 Showing {(currentPage - 1) * PAGE_SIZE + 1}–
-                {Math.min(
-                  currentPage * PAGE_SIZE,
-                  filteredTickets.length
-                )}{" "}
+                {Math.min(currentPage * PAGE_SIZE, filteredTickets.length)}{" "}
                 of {filteredTickets.length}
               </span>
 
@@ -1969,12 +2151,10 @@ export default function Attendance() {
                   aria-label="Previous page"
                   disabled={currentPage <= 1}
                   onClick={() =>
-                    setPage((previous) =>
-                      Math.max(1, previous - 1)
-                    )
+                    setPage((previous) => Math.max(1, previous - 1))
                   }
                 >
-                  <ChevronLeft size={17} />
+                  <ChevronLeft size={15} />
                 </button>
 
                 <span>
@@ -1991,13 +2171,302 @@ export default function Attendance() {
                     )
                   }
                 >
-                  <ChevronRight size={17} />
+                  <ChevronRight size={15} />
                 </button>
               </div>
             </footer>
           </>
         )}
       </section>
+
+      {/* Attendee profile modal */}
+      {profileTicket && profile && (
+        <div
+          className="attendance-modal-backdrop"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              closeProfile();
+            }
+          }}
+        >
+          <section
+            className="attendance-modal attendance-modal--wide"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="attendance-profile-title"
+          >
+            <header className="attendance-modal-header">
+              <div className="attendance-profile-title">
+                <span className="attendance-profile-avatar">
+                  {String(profile.name).slice(0, 1).toUpperCase()}
+                </span>
+
+                <div>
+                  <span className="attendance-section-kicker">
+                    ATTENDEE DETAILS
+                  </span>
+
+                  <h2 id="attendance-profile-title">{profile.name}</h2>
+
+                  <div className="attendance-profile-badges">
+                    <AttendanceBadge ticket={profileTicket} />
+                    <StatusBadge ticket={profileTicket} />
+
+                    {profile.category && (
+                      <span className="attendance-category-badge">
+                        <Tag size={11} />
+                        {profile.category}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                className="attendance-icon-button"
+                aria-label="Close attendee details"
+                onClick={closeProfile}
+                disabled={Boolean(actionLoading)}
+              >
+                <X size={16} />
+              </button>
+            </header>
+
+            <div className="attendance-modal-body">
+              {profileLoading && (
+                <div className="attendance-profile-loading" role="status">
+                  <Spinner size={14} />
+                  Loading registration details…
+                </div>
+              )}
+
+              {profileError && !profileLoading && (
+                <div className="attendance-profile-warning" role="alert">
+                  <AlertCircle size={14} />
+                  {profileError}
+                </div>
+              )}
+
+              {profileSummary && (
+                <div className="attendance-profile-summary">
+                  <div>
+                    <strong>{profileSummary.registrations}</strong>
+                    <span>Registrations</span>
+                  </div>
+
+                  <div>
+                    <strong>{profileSummary.present}</strong>
+                    <span>Present</span>
+                  </div>
+
+                  <div>
+                    <strong>{profileSummary.absent}</strong>
+                    <span>Absent</span>
+                  </div>
+
+                  <div>
+                    <strong>{profileSummary.cancelled}</strong>
+                    <span>Cancelled</span>
+                  </div>
+                </div>
+              )}
+
+              <ProfileSection
+                icon={<User size={14} />}
+                title="Personal & contact"
+              >
+                <DetailRow label="Full name" value={profile.name} />
+                <DetailRow label="Email" value={profile.email} />
+                <DetailRow
+                  label="Phone"
+                  value={
+                    profile.phone ||
+                    (profileLoading ? "Loading…" : "Not provided")
+                  }
+                />
+                <DetailRow
+                  label="Category"
+                  value={
+                    profile.category ||
+                    (profileLoading ? "Loading…" : "—")
+                  }
+                />
+              </ProfileSection>
+
+              <ProfileSection
+                icon={<ClipboardCheck size={14} />}
+                title="Registration"
+              >
+                <DetailRow
+                  label="Registration ID"
+                  value={profile.registrationId}
+                />
+                <DetailRow
+                  label="Registration status"
+                  value={
+                    profile.registrationStatus ||
+                    (profileLoading ? "Loading…" : "—")
+                  }
+                />
+                <DetailRow
+                  label="Registered on"
+                  value={profile.registeredAt}
+                />
+              </ProfileSection>
+
+              <ProfileSection
+                icon={<CalendarDays size={14} />}
+                title="Event"
+              >
+                <DetailRow
+                  label="Event"
+                  value={eventName(profileTicket)}
+                />
+                <DetailRow label="Event date" value={profile.eventDate} />
+                <DetailRow
+                  label="Venue"
+                  value={
+                    profile.venue ||
+                    (profileLoading ? "Loading…" : "—")
+                  }
+                />
+              </ProfileSection>
+
+              <ProfileSection
+                icon={<Ticket size={14} />}
+                title="Ticket & attendance"
+              >
+                <DetailRow
+                  label="Ticket ID"
+                  value={ticketId(profileTicket) || "No ID"}
+                />
+                <DetailRow
+                  label="Ticket status"
+                  value={normalizeStatus(profileTicket)}
+                />
+                <DetailRow
+                  label="Attendance"
+                  value={getAttendanceStatus(profileTicket)}
+                />
+                <DetailRow
+                  label="Ticket issued"
+                  value={issuedDate(profileTicket)}
+                />
+                <DetailRow
+                  label="Checked in at"
+                  value={checkInDate(profileTicket)}
+                />
+
+                {profile.qr && (
+                  <div className="attendance-qr">
+                    <h3>Ticket QR code</h3>
+
+                    <img
+                      src={qrImageSource(profile.qr)}
+                      alt="Ticket QR code"
+                    />
+                  </div>
+                )}
+              </ProfileSection>
+
+              {otherRegistrations.length > 0 && (
+                <ProfileSection
+                  icon={<MapPin size={14} />}
+                  title={`Other registrations (${otherRegistrations.length})`}
+                >
+                  <ul className="attendance-profile-history">
+                    {otherRegistrations.map((ticket, index) => (
+                      <li key={ticketId(ticket) || index}>
+                        <div>
+                          <strong>{eventName(ticket)}</strong>
+                          <small>
+                            {eventDate(ticket)} · {ticketId(ticket)}
+                          </small>
+                        </div>
+
+                        <AttendanceBadge ticket={ticket} />
+                      </li>
+                    ))}
+                  </ul>
+                </ProfileSection>
+              )}
+            </div>
+
+            <footer className="attendance-modal-footer">
+              {profile.email && profile.email !== "—" && (
+                <a
+                  className="attendance-button attendance-button--secondary"
+                  href={`mailto:${profile.email}`}
+                >
+                  <Mail size={14} />
+                  Email
+                </a>
+              )}
+
+              {profile.phone && (
+                <a
+                  className="attendance-button attendance-button--secondary"
+                  href={`tel:${String(profile.phone).replace(/[^\d+]/g, "")}`}
+                >
+                  <Phone size={14} />
+                  Call
+                </a>
+              )}
+
+              {isOrganizer && (
+                <>
+                  <button
+                    type="button"
+                    className="attendance-button attendance-button--primary"
+                    disabled={
+                      normalizeStatus(profileTicket) !== STATUS.VALID ||
+                      Boolean(actionLoading)
+                    }
+                    onClick={() => checkInTicket(profileTicket)}
+                  >
+                    {actionLoading ===
+                    `checkin:${ticketId(profileTicket)}` ? (
+                      <Spinner />
+                    ) : (
+                      <ClipboardCheck size={14} />
+                    )}
+                    Mark attendance
+                  </button>
+
+                  <button
+                    type="button"
+                    className="attendance-button attendance-button--danger"
+                    disabled={
+                      normalizeStatus(profileTicket) !== STATUS.VALID ||
+                      Boolean(actionLoading)
+                    }
+                    onClick={() => cancelTicket(profileTicket)}
+                  >
+                    {actionLoading ===
+                    `cancel:${ticketId(profileTicket)}` ? (
+                      <Spinner />
+                    ) : (
+                      <Ban size={14} />
+                    )}
+                    Cancel ticket
+                  </button>
+                </>
+              )}
+
+              <button
+                type="button"
+                className="attendance-button attendance-button--secondary"
+                onClick={closeProfile}
+                disabled={Boolean(actionLoading)}
+              >
+                Close
+              </button>
+            </footer>
+          </section>
+        </div>
+      )}
 
       {/* Ticket details modal */}
       {activeTicket && (
@@ -2022,9 +2491,7 @@ export default function Attendance() {
                   TICKET DETAILS
                 </span>
 
-                <h2 id="attendance-modal-title">
-                  Ticket information
-                </h2>
+                <h2 id="attendance-modal-title">Ticket information</h2>
               </div>
 
               <button
@@ -2034,14 +2501,14 @@ export default function Attendance() {
                 onClick={closeTicket}
                 disabled={Boolean(actionLoading)}
               >
-                <X size={18} />
+                <X size={16} />
               </button>
             </header>
 
             <div className="attendance-modal-body">
               <div className="attendance-modal-ticket">
                 <span className="attendance-modal-ticket-icon">
-                  <Ticket size={24} />
+                  <Ticket size={20} />
                 </span>
 
                 <div className="attendance-modal-ticket-copy">
@@ -2057,15 +2524,9 @@ export default function Attendance() {
                 value={attendeeName(activeTicket)}
               />
 
-              <DetailRow
-                label="Email"
-                value={attendeeEmail(activeTicket)}
-              />
+              <DetailRow label="Email" value={attendeeEmail(activeTicket)} />
 
-              <DetailRow
-                label="Event"
-                value={eventName(activeTicket)}
-              />
+              <DetailRow label="Event" value={eventName(activeTicket)} />
 
               <DetailRow
                 label="Event date"
@@ -2092,12 +2553,7 @@ export default function Attendance() {
                   <h3>Ticket QR code</h3>
 
                   <img
-                    src={
-                      String(activeTicket.qr_code).startsWith("data:") ||
-                      String(activeTicket.qr_code).startsWith("http")
-                        ? activeTicket.qr_code
-                        : `data:image/png;base64,${activeTicket.qr_code}`
-                    }
+                    src={qrImageSource(activeTicket.qr_code)}
                     alt="Ticket QR code"
                   />
                 </div>
@@ -2106,9 +2562,7 @@ export default function Attendance() {
               {verification && (
                 <div className="attendance-verification">
                   <h3>Verification result</h3>
-                  <pre>
-                    {JSON.stringify(verification, null, 2)}
-                  </pre>
+                  <pre>{JSON.stringify(verification, null, 2)}</pre>
                 </div>
               )}
             </div>
@@ -2126,7 +2580,7 @@ export default function Attendance() {
                     `verify:${ticketId(activeTicket)}` ? (
                       <Spinner />
                     ) : (
-                      <ShieldCheck size={16} />
+                      <ShieldCheck size={14} />
                     )}
                     Verify
                   </button>
@@ -2144,7 +2598,7 @@ export default function Attendance() {
                     `checkin:${ticketId(activeTicket)}` ? (
                       <Spinner />
                     ) : (
-                      <ClipboardCheck size={16} />
+                      <ClipboardCheck size={14} />
                     )}
                     Mark attendance
                   </button>
@@ -2162,7 +2616,7 @@ export default function Attendance() {
                     `cancel:${ticketId(activeTicket)}` ? (
                       <Spinner />
                     ) : (
-                      <Ban size={16} />
+                      <Ban size={14} />
                     )}
                     Cancel
                   </button>
