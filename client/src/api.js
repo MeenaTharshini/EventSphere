@@ -743,6 +743,56 @@ export function updateSponsorship(id, data) {
   );
 }
 
+// =========================================================
+// NOTIFICATIONS
+// =========================================================
+
+export function getNotifications(params = {}) {
+  const query = new URLSearchParams();
+
+  if (params.unread_only !== undefined) {
+  query.set("unread_only", String(params.unread_only));
+}
+
+  if (params.limit !== undefined) {
+    query.set("limit", String(params.limit));
+  }
+
+  if (params.skip !== undefined) {
+    query.set("skip", String(params.skip));
+  }
+
+  const suffix = query.toString()
+    ? `?${query.toString()}`
+    : "";
+
+  return apiRequest(`/notifications/${suffix}`);
+}
+
+export function getUnreadNotificationCount() {
+  return apiRequest("/notifications/unread-count");
+}
+
+export function markNotificationRead(notificationId) {
+  return apiRequest(
+    `/notifications/${encodeURIComponent(notificationId)}/read`,
+    { method: "PATCH" }
+  );
+}
+
+export function markAllNotificationsRead() {
+  return apiRequest("/notifications/read-all", {
+    method: "PATCH",
+  });
+}
+
+export function deleteNotification(notificationId) {
+  return apiRequest(
+    `/notifications/${encodeURIComponent(notificationId)}`,
+    { method: "DELETE" }
+  );
+}
+
 // DELETE /api/sponsorships/{id}
 export function deleteSponsorship(id) {
   return apiRequest(

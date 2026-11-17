@@ -4,9 +4,15 @@ from typing import Literal, Optional
 
 from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+)
 
 from routes.auth import get_current_user
+from .notifications import create_notification
 
 
 router = APIRouter(
@@ -994,6 +1000,95 @@ def get_updated_budget_response(
 
 
 # =========================================================
+# NOTIFICATION HELPER
+# =========================================================
+
+def notify_expense_requester(
+    request: Request,
+    expense: dict,
+    event: dict,
+    approved: bool,
+    rejection_reason: Optional[str] = None,
+):
+    """
+    Notify the user who submitted the expense.
+
+    Uses the existing requested_by field from the
+    expenses collection.
+    """
+
+    recipient_id = str(
+        expense.get("requested_by") or ""
+    ).strip()
+
+    if not recipient_id:
+        print(
+            "Expense notification skipped: "
+            f"expense {expense.get('_id')} has no requested_by."
+        )
+        return
+
+    event_name = (
+        event.get("name")
+        or event.get("title")
+        or event.get("event_name")
+        or "your event"
+    )
+
+    description = (
+        expense.get("description")
+        or "Expense"
+    )
+
+    amount = safe_float(
+        expense.get("amount")
+    )
+
+    if approved:
+        title = "Expense approved"
+
+        message = (
+            f"Your expense '{description}' "
+            f"for {event_name} has been approved. "
+            f"Amount: ₹{amount:,.2f}."
+        )
+
+        notification_type = "success"
+
+    else:
+        title = "Expense rejected"
+
+        message = (
+            f"Your expense '{description}' "
+            f"for {event_name} has been rejected. "
+            f"Reason: {rejection_reason or 'No reason provided'}"
+        )
+
+        notification_type = "error"
+
+    create_notification(
+        db=request.app.state.db,
+        recipient_id=recipient_id,
+        title=title,
+        message=message,
+        notification_type=notification_type,
+        category="expense",
+        related_id=str(expense["_id"]),
+        related_type="expense",
+        metadata={
+            "event_id": str(expense.get("event_id", "")),
+            "event_name": event_name,
+            "expense_description": description,
+            "amount": amount,
+            "status": "Approved" if approved else "Rejected",
+            "rejection_reason": (
+                rejection_reason if not approved else None
+            ),
+        },
+    )
+
+
+# =========================================================
 # CATEGORIES
 # =========================================================
 
@@ -1162,8 +1257,6 @@ def add_expense(
         data,
     )
 
-    # Every new expense must fit the budget.
-    # The client cannot bypass this by sending Rejected status.
     ensure_expense_fits_budget(
         request,
         event,
@@ -1180,12 +1273,10 @@ def add_expense(
         expense_document["linked_item_id"] = None
         expense_document["linked_item_name"] = None
 
+    # New expenses always require admin review.
     expense_document.update({
         "event_id": event_id,
-
-        # New expenses always require admin review.
         "status": "Pending",
-
         "requested_by": get_user_id(user),
         "requested_by_name": get_user_name(user),
 
@@ -1211,9 +1302,7 @@ def add_expense(
     return {
         "success": True,
         "message": "Expense submitted for approval.",
-        "expense": serialize_expense(
-            created_expense
-        ),
+        "expense": serialize_expense(created_expense),
         "budget": get_updated_budget_response(
             request,
             event,
@@ -1252,8 +1341,11 @@ def update_expense(
         event,
     )
 
-    # Do not allow editing a decision that has already been made.
-    if existing.get("status") in ("Approved", "Paid", "Rejected"):
+    if existing.get("status") in (
+        "Approved",
+        "Paid",
+        "Rejected",
+    ):
         raise HTTPException(
             status_code=400,
             detail=(
@@ -1293,7 +1385,7 @@ def update_expense(
         update_document["linked_item_id"] = None
         update_document["linked_item_name"] = None
 
-    # Status and approval data cannot be changed through this route.
+    # Approval status is controlled only by admin endpoints.
     update_document.pop("status", None)
 
     update_document["updated_at"] = datetime.now(timezone.utc)
@@ -1375,6 +1467,14 @@ def approve_expense(
         {"_id": existing["_id"]}
     )
 
+    # Send notification to the original requester.
+    notify_expense_requester(
+        request=request,
+        expense=updated,
+        event=event,
+        approved=True,
+    )
+
     return {
         "success": True,
         "message": "Expense approved successfully.",
@@ -1442,6 +1542,15 @@ def reject_expense(
         {"_id": existing["_id"]}
     )
 
+    # Send rejection notification with the admin's reason.
+    notify_expense_requester(
+        request=request,
+        expense=updated,
+        event=event,
+        approved=False,
+        rejection_reason=data.reason,
+    )
+
     return {
         "success": True,
         "message": "Expense rejected successfully.",
@@ -1483,9 +1592,11 @@ def delete_expense(
         event,
     )
 
-    # Reviewed expenses should not be deleted through the
-    # normal expense-management route.
-    if existing.get("status") in ("Approved", "Paid", "Rejected"):
+    if existing.get("status") in (
+        "Approved",
+        "Paid",
+        "Rejected",
+    ):
         raise HTTPException(
             status_code=400,
             detail=(
@@ -1516,6 +1627,7 @@ def delete_expense(
             event,
         ),
     }
+
 
 # =========================================================
 # ADMIN: GET ALL EXPENSE APPROVAL REQUESTS

@@ -9,7 +9,7 @@ from pymongo.errors import DuplicateKeyError, PyMongoError
 
 from .auth import get_current_user
 from .tickets import create_ticket_for_registration
-
+from .notifications import create_notification
 
 router = APIRouter(
     prefix="/api/attendees",
@@ -612,7 +612,45 @@ def register_attendee(
             status_code=409,
             detail="This event has already ended. Registration is closed.",
         )
+        # -----------------------------------------------------
+    # NOTIFY ATTENDEE ABOUT SUCCESSFUL REGISTRATION
+    # -----------------------------------------------------
 
+    create_notification(
+        db=db,
+        recipient_id=str(current_user["_id"]),
+        title="Registration successful",
+        message=(
+            f"You are registered for "
+            f"{attendee['event_name']}."
+        ),
+        notification_type="success",
+        category="registration",
+        related_id=str(registration_id),
+        related_type="attendee_registration",
+        metadata={
+            "event_id": str(event_oid),
+            "event_name": attendee["event_name"],
+        },
+    )
+        # -----------------------------------------------------
+    # NOTIFY ATTENDEE ABOUT CANCELLATION
+    # -----------------------------------------------------
+
+    create_notification(
+        db=db,
+        recipient_id=str(current_user["_id"]),
+        title="Registration cancelled",
+        message=(
+            f"Your registration for "
+            f"{registration.get('event_name', 'the event')} "
+            f"has been cancelled."
+        ),
+        notification_type="warning",
+        category="registration",
+        related_id=registration_id,
+        related_type="attendee_registration",
+    )
     # -----------------------------------------------------
     # PREVENT DUPLICATE REGISTRATIONS
     # -----------------------------------------------------

@@ -16,6 +16,7 @@ from routes.tickets import router as tickets_router
 from routes.vendors import router as vendors_router
 from routes.budgets import router as budgets_router
 from routes.sponsorships import router as sponsorships_router
+from routes.notifications import router as notifications_router
 
 # ---------------------------------------------------------
 # APPLICATION LIFESPAN
@@ -49,7 +50,28 @@ async def lifespan(app: FastAPI):
             unique=True,
             name="unique_ticket_registration",
         )
+                # -------------------------------------------------
+        # NOTIFICATION INDEXES
+        # -------------------------------------------------
 
+        db["notifications"].create_index(
+            [("recipient_id", 1), ("created_at", -1)],
+            name="notification_recipient_created",
+        )
+
+        db["notifications"].create_index(
+            [("recipient_id", 1), ("is_read", 1)],
+            name="notification_recipient_read",
+        )
+
+        db["notifications"].create_index(
+            [("recipient_id", 1), ("dedupe_key", 1)],
+            unique=True,
+            partialFilterExpression={
+                "dedupe_key": {"$type": "string"}
+            },
+            name="unique_notification_dedupe",
+        )
         # -------------------------------------------------
         # VENDOR INDEXES
         # -------------------------------------------------
@@ -136,6 +158,7 @@ app.include_router(tickets_router)
 app.include_router(vendors_router)
 app.include_router(budgets_router)
 app.include_router(sponsorships_router)
+app.include_router(notifications_router)
 
 # ---------------------------------------------------------
 # ROOT ENDPOINT

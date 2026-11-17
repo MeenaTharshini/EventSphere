@@ -1,11 +1,14 @@
-
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   Activity,
   AlertCircle,
+  Bell,
+  BellRing,
   CalendarDays,
   CalendarPlus,
+  Check,
+  CheckCheck,
   CheckCircle2,
   ChevronRight,
   Clock3,
@@ -22,6 +25,8 @@ import {
   ShieldCheck,
   XCircle,
   IndianRupee,
+  Trash2,
+  X,
 } from "lucide-react";
 
 import {
@@ -29,6 +34,11 @@ import {
   getEvents,
   getVenues,
   logoutUser,
+  getNotifications,
+  getUnreadNotificationCount,
+  markNotificationRead,
+  markAllNotificationsRead,
+  deleteNotification,
 } from "./api";
 
 import Sidebar from "./Sidebar";
@@ -260,6 +270,452 @@ function getTimestamp(value) {
   const timestamp = new Date(value).getTime();
 
   return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function getNotificationId(notification) {
+  return String(
+    notification?.id ??
+    notification?._id ??
+    ""
+  );
+}
+
+function formatNotificationDate(value) {
+  if (!value) return "";
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) return "";
+
+  return new Intl.DateTimeFormat("en-IN", {
+    day: "numeric",
+    month: "short",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(date);
+}
+
+/* =======================================================
+   NOTIFICATION CENTER
+======================================================= */
+
+function NotificationCenter() {
+  const [notifications, setNotifications] = useState([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [processingId, setProcessingId] = useState("");
+  const [markingAll, setMarkingAll] = useState(false);
+  const [error, setError] = useState("");
+
+  const containerRef = useRef(null);
+
+  const loadNotifications = useCallback(async (showLoading = false) => {
+    if (showLoading) setLoading(true);
+
+    try {
+      setError("");
+
+      const [notificationResponse, countResponse] =
+        await Promise.all([
+          getNotifications({ limit: 8, skip: 0 }),
+          getUnreadNotificationCount(),
+        ]);
+        console.log(
+  "Notifications API response:",
+  notificationResponse
+);
+
+console.log(
+  "Unread count API response:",
+  countResponse
+);
+
+console.log(
+  "Current logged-in user:",
+  JSON.parse(localStorage.getItem("user") || "null")
+);
+      const items = toArray(notificationResponse, [
+        "notifications",
+        "items",
+      ]);
+
+      setNotifications(items);
+
+      const count =
+        countResponse?.unread_count ??
+        countResponse?.count ??
+        notificationResponse?.unread_count ??
+        0;
+
+      setUnreadCount(Math.max(0, Number(count) || 0));
+    } catch (err) {
+      setError(
+        err?.message ||
+        "Unable to load notifications."
+      );
+    } finally {
+      if (showLoading) setLoading(false);
+    }
+  }, []);
+
+  /* Initial load and periodic refresh */
+
+  useEffect(() => {
+    loadNotifications();
+
+    const interval = window.setInterval(() => {
+      loadNotifications();
+    }, 60000);
+
+    return () => window.clearInterval(interval);
+  }, [loadNotifications]);
+
+  /* Close dropdown when clicking outside */
+
+  useEffect(() => {
+    function handleOutsideClick(event) {
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(event.target)
+      ) {
+        setOpen(false);
+      }
+    }
+
+    function handleEscape(event) {
+      if (event.key === "Escape") {
+        setOpen(false);
+      }
+    }
+
+    document.addEventListener("mousedown", handleOutsideClick);
+    document.addEventListener("keydown", handleEscape);
+
+    return () => {
+      document.removeEventListener(
+        "mousedown",
+        handleOutsideClick
+      );
+
+      document.removeEventListener(
+        "keydown",
+        handleEscape
+      );
+    };
+  }, []);
+
+  const handleToggle = () => {
+    const nextOpen = !open;
+
+    setOpen(nextOpen);
+
+    if (nextOpen) {
+      loadNotifications(true);
+    }
+  };
+
+  const handleMarkRead = async (notification) => {
+    const notificationId = getNotificationId(notification);
+
+    if (!notificationId || notification.is_read) return;
+
+    setProcessingId(notificationId);
+    setError("");
+
+    try {
+      await markNotificationRead(notificationId);
+
+      setNotifications((previous) =>
+        previous.map((item) =>
+          getNotificationId(item) === notificationId
+            ? { ...item, is_read: true }
+            : item
+        )
+      );
+
+      setUnreadCount((previous) =>
+        Math.max(0, previous - 1)
+      );
+    } catch (err) {
+      setError(
+        err?.message ||
+        "Unable to mark notification as read."
+      );
+    } finally {
+      setProcessingId("");
+    }
+  };
+
+  const handleMarkAllRead = async () => {
+    if (unreadCount === 0 || markingAll) return;
+
+    setMarkingAll(true);
+    setError("");
+
+    try {
+      await markAllNotificationsRead();
+
+      setNotifications((previous) =>
+        previous.map((item) => ({
+          ...item,
+          is_read: true,
+        }))
+      );
+
+      setUnreadCount(0);
+    } catch (err) {
+      setError(
+        err?.message ||
+        "Unable to mark all notifications as read."
+      );
+    } finally {
+      setMarkingAll(false);
+    }
+  };
+
+  const handleDelete = async (notification) => {
+    const notificationId = getNotificationId(notification);
+
+    if (!notificationId) return;
+
+    setProcessingId(notificationId);
+    setError("");
+
+    try {
+      await deleteNotification(notificationId);
+
+      setNotifications((previous) =>
+        previous.filter(
+          (item) =>
+            getNotificationId(item) !== notificationId
+        )
+      );
+
+      if (!notification.is_read) {
+        setUnreadCount((previous) =>
+          Math.max(0, previous - 1)
+        );
+      }
+    } catch (err) {
+      setError(
+        err?.message ||
+        "Unable to delete notification."
+      );
+    } finally {
+      setProcessingId("");
+    }
+  };
+
+  return (
+    <div
+      className="dashboard-notification-container"
+      ref={containerRef}
+    >
+      <button
+        type="button"
+        className="dashboard-notification-trigger"
+        onClick={handleToggle}
+        aria-label={
+          unreadCount > 0
+            ? `${unreadCount} unread notifications`
+            : "Notifications"
+        }
+        aria-expanded={open}
+        title="Notifications"
+      >
+        {unreadCount > 0 ? (
+          <BellRing size={21} />
+        ) : (
+          <Bell size={21} />
+        )}
+
+        {unreadCount > 0 && (
+          <span className="dashboard-notification-count">
+            {unreadCount > 99 ? "99+" : unreadCount}
+          </span>
+        )}
+      </button>
+
+      {open && (
+        <div
+          className="dashboard-notification-dropdown"
+          role="dialog"
+          aria-label="Notifications"
+        >
+          <div className="dashboard-notification-header">
+            <div>
+              <h3>Notifications</h3>
+
+              <p>
+                {unreadCount > 0
+                  ? `${unreadCount} unread notification${
+                      unreadCount === 1 ? "" : "s"
+                    }`
+                  : "You're all caught up"}
+              </p>
+            </div>
+
+            <div className="dashboard-notification-header-actions">
+              {unreadCount > 0 && (
+                <button
+                  type="button"
+                  title="Mark all as read"
+                  aria-label="Mark all notifications as read"
+                  onClick={handleMarkAllRead}
+                  disabled={markingAll}
+                >
+                  {markingAll ? (
+                    <LoaderCircle
+                      size={17}
+                      className="dashboard-spinning"
+                    />
+                  ) : (
+                    <CheckCheck size={17} />
+                  )}
+                </button>
+              )}
+
+              <button
+                type="button"
+                title="Close notifications"
+                aria-label="Close notifications"
+                onClick={() => setOpen(false)}
+              >
+                <X size={18} />
+              </button>
+            </div>
+          </div>
+
+          {error && (
+            <div
+              className="dashboard-notification-error"
+              role="alert"
+            >
+              {error}
+            </div>
+          )}
+
+          {loading ? (
+            <div className="dashboard-notification-empty">
+              <LoaderCircle
+                size={23}
+                className="dashboard-spinning"
+              />
+
+              <p>Loading notifications...</p>
+            </div>
+          ) : notifications.length === 0 ? (
+            <div className="dashboard-notification-empty">
+              <Bell size={28} />
+
+              <h4>No notifications</h4>
+
+              <p>
+                Updates about registrations, expenses,
+                and events will appear here.
+              </p>
+            </div>
+          ) : (
+            <div className="dashboard-notification-list">
+              {notifications.map((notification, index) => {
+                const notificationId =
+                  getNotificationId(notification) ||
+                  `notification-${index}`;
+
+                const busy =
+                  processingId === notificationId;
+
+                return (
+                  <article
+                    key={notificationId}
+                    className={[
+                      "dashboard-notification-item",
+                      notification.is_read
+                        ? "is-read"
+                        : "is-unread",
+                    ].join(" ")}
+                  >
+                    <button
+                      type="button"
+                      className="dashboard-notification-content"
+                      onClick={() =>
+                        handleMarkRead(notification)
+                      }
+                      disabled={
+                        notification.is_read || busy
+                      }
+                    >
+                      <span className="dashboard-notification-indicator">
+                        {notification.is_read ? (
+                          <Check size={15} />
+                        ) : (
+                          <span />
+                        )}
+                      </span>
+
+                      <span className="dashboard-notification-text">
+                        <strong>
+                          {notification.title ||
+                            "Notification"}
+                        </strong>
+
+                        <span>
+                          {notification.message ||
+                            "You have a new update."}
+                        </span>
+
+                        <small>
+                          {formatNotificationDate(
+                            notification.created_at
+                          )}
+                        </small>
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      className="dashboard-notification-delete"
+                      aria-label="Delete notification"
+                      title="Delete notification"
+                      disabled={busy}
+                      onClick={() =>
+                        handleDelete(notification)
+                      }
+                    >
+                      {busy ? (
+                        <LoaderCircle
+                          size={15}
+                          className="dashboard-spinning"
+                        />
+                      ) : (
+                        <Trash2 size={15} />
+                      )}
+                    </button>
+                  </article>
+                );
+              })}
+            </div>
+          )}
+
+          <div className="dashboard-notification-footer">
+            <button
+  type="button"
+  onClick={() => loadNotifications(true)}
+  disabled={loading}
+>
+  <RefreshCw
+    size={14}
+    className={loading ? "dashboard-spinning" : ""}
+  />
+  Refresh notifications
+</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 /* =======================================================
@@ -1515,6 +1971,8 @@ export default function Dashboard({
           </div>
 
           <div className="dashboard-topbar-actions">
+            <NotificationCenter />
+
             <span className="dashboard-user-name">
               {getUserName(user)}
             </span>

@@ -1363,3 +1363,309 @@ svg {
     transition-duration: 0.01ms !important;
   }
 }
+/* =======================================================
+   NOTIFICATION CENTER
+======================================================= */
+
+.dashboard-notification-container {
+  position: relative;
+  display: flex;
+  align-items: center;
+  z-index: 100;
+}
+
+.dashboard-notification-trigger {
+  position: relative;
+  width: 42px;
+  height: 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  color: inherit;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.dashboard-notification-trigger:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.dashboard-notification-count {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 19px;
+  height: 19px;
+  padding: 0 5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid #111827;
+  border-radius: 20px;
+  background: #ef4444;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.dashboard-notification-dropdown {
+  position: absolute;
+  top: calc(100% + 12px);
+  right: 0;
+  width: min(390px, calc(100vw - 32px));
+  max-height: 520px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 16px;
+  background: #111827;
+  color: #f8fafc;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.4);
+}
+
+.dashboard-notification-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 17px 18px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.09);
+}
+
+.dashboard-notification-header h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.dashboard-notification-header p {
+  margin: 5px 0 0;
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+.dashboard-notification-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.dashboard-notification-header-actions button {
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.07);
+  color: #cbd5e1;
+  cursor: pointer;
+}
+
+.dashboard-notification-header-actions button:hover {
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+}
+
+.dashboard-notification-header-actions button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.dashboard-notification-list {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.dashboard-notification-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 13px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  transition: background 0.2s ease;
+}
+
+.dashboard-notification-item:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.dashboard-notification-item.is-unread {
+  background: rgba(99, 102, 241, 0.09);
+}
+
+.dashboard-notification-content {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.dashboard-notification-content:disabled {
+  cursor: default;
+}
+
+.dashboard-notification-indicator {
+  width: 25px;
+  height: 25px;
+  flex: 0 0 25px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 2px;
+  border-radius: 50%;
+  background: rgba(99, 102, 241, 0.16);
+  color: #a5b4fc;
+}
+
+.dashboard-notification-item.is-unread
+.dashboard-notification-indicator {
+  background: #4f46e5;
+  color: #fff;
+}
+
+.dashboard-notification-item.is-unread
+.dashboard-notification-indicator span {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #fff;
+}
+
+.dashboard-notification-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.dashboard-notification-text strong {
+  color: #f8fafc;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.dashboard-notification-text > span {
+  color: #cbd5e1;
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.dashboard-notification-text small {
+  color: #64748b;
+  font-size: 11px;
+}
+
+.dashboard-notification-delete {
+  width: 29px;
+  height: 29px;
+  flex: 0 0 29px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #64748b;
+  cursor: pointer;
+}
+
+.dashboard-notification-delete:hover {
+  background: rgba(239, 68, 68, 0.13);
+  color: #f87171;
+}
+
+.dashboard-notification-delete:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.dashboard-notification-empty {
+  min-height: 180px;
+  padding: 25px 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  color: #64748b;
+  text-align: center;
+}
+
+.dashboard-notification-empty h4 {
+  margin: 0;
+  color: #e2e8f0;
+  font-size: 14px;
+}
+
+.dashboard-notification-empty p {
+  max-width: 260px;
+  margin: 0;
+  color: #94a3b8;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.dashboard-notification-footer {
+  padding: 11px 15px;
+  border-top: 1px solid rgba(255, 255, 255, 0.09);
+}
+
+.dashboard-notification-footer button {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 9px;
+  border: 0;
+  border-radius: 8px;
+  background: rgba(99, 102, 241, 0.13);
+  color: #a5b4fc;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.dashboard-notification-footer button:hover {
+  background: rgba(99, 102, 241, 0.22);
+}
+
+.dashboard-notification-error {
+  margin: 10px 12px 0;
+  padding: 9px 11px;
+  border-radius: 8px;
+  background: rgba(239, 68, 68, 0.12);
+  color: #fca5a5;
+  font-size: 12px;
+}
+
+@media (max-width: 600px) {
+  .dashboard-notification-dropdown {
+    position: fixed;
+    top: 75px;
+    right: 12px;
+    width: calc(100vw - 24px);
+    max-height: calc(100vh - 95px);
+  }
+
+  .dashboard-notification-trigger {
+    width: 38px;
+    height: 38px;
+  }
+}
