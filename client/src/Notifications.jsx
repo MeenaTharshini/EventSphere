@@ -31,13 +31,25 @@ const POLLING_INTERVAL = 10000;
 const RECENT_PREVIEW_COUNT = 5;
 const APPROVAL_PREVIEW_COUNT = 5;
 
+// ---------------------------------------------------------
+// RESPONSE HELPERS
+// ---------------------------------------------------------
+
 function getArray(response, keys = []) {
   if (Array.isArray(response)) return response;
-  if (Array.isArray(response?.data)) return response.data;
+
+  if (Array.isArray(response?.data)) {
+    return response.data;
+  }
 
   for (const key of keys) {
-    if (Array.isArray(response?.[key])) return response[key];
-    if (Array.isArray(response?.data?.[key])) return response.data[key];
+    if (Array.isArray(response?.[key])) {
+      return response[key];
+    }
+
+    if (Array.isArray(response?.data?.[key])) {
+      return response.data[key];
+    }
   }
 
   return [];
@@ -62,6 +74,7 @@ function getNotificationDate(notification) {
   if (!value) return null;
 
   const date = new Date(value);
+
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
@@ -86,8 +99,17 @@ function formatTime(date) {
 }
 
 function getEventName(event) {
-  return event?.name ?? event?.title ?? event?.event_name ?? "Untitled event";
+  return (
+    event?.name ??
+    event?.title ??
+    event?.event_name ??
+    "Untitled event"
+  );
 }
+
+// ---------------------------------------------------------
+// NOTIFICATION CLASSIFICATION
+// ---------------------------------------------------------
 
 function getNotificationText(notification) {
   return `${notification?.title ?? ""} ${
@@ -102,7 +124,10 @@ function getCategory(notification) {
 
   const content = getNotificationText(notification);
 
-  if (category.includes("approval") || content.includes("approval")) {
+  if (
+    category.includes("approval") ||
+    content.includes("approval")
+  ) {
     return "Approval";
   }
 
@@ -122,11 +147,17 @@ function getCategory(notification) {
     return "Registration";
   }
 
-  if (category.includes("ticket") || content.includes("ticket")) {
+  if (
+    category.includes("ticket") ||
+    content.includes("ticket")
+  ) {
     return "Ticket";
   }
 
-  if (category.includes("budget") || content.includes("expense")) {
+  if (
+    category.includes("budget") ||
+    content.includes("expense")
+  ) {
     return "Budget";
   }
 
@@ -168,13 +199,19 @@ function getTone(notification) {
   return "info";
 }
 
+// ---------------------------------------------------------
+// APPROVAL NOTIFICATION HELPERS
+// ---------------------------------------------------------
+
 function getApprovalRow(notification) {
   const content = getNotificationText(notification);
+
   const raw = `${notification?.title ?? ""} ${
     notification?.message ?? ""
   }`;
 
-  const quoted = raw.match(/['"‘“]([^'"’”]+)['"’”]/);
+  // Extract an item name enclosed in quotation marks.
+  const quoted = raw.match(/['"“‘]([^'"”’]+)['"”’]/);
 
   const item =
     notification?.item ??
@@ -190,8 +227,11 @@ function getApprovalRow(notification) {
 
   let status = "Pending";
 
-  if (content.includes("rejected")) status = "Rejected";
-  else if (content.includes("approved")) status = "Approved";
+  if (content.includes("rejected")) {
+    status = "Rejected";
+  } else if (content.includes("approved")) {
+    status = "Approved";
+  }
 
   return {
     id: getNotificationId(notification),
@@ -202,10 +242,15 @@ function getApprovalRow(notification) {
   };
 }
 
+// ---------------------------------------------------------
+// FORMATTING
+// ---------------------------------------------------------
+
 function formatMoney(value) {
   if (value == null || value === "") return "—";
 
   const amount = Number(value);
+
   if (!Number.isFinite(amount)) return "—";
 
   return new Intl.NumberFormat("en-IN", {
@@ -219,9 +264,14 @@ function getNotificationList(response) {
   return getArray(response, ["notifications", "items"]);
 }
 
+// ---------------------------------------------------------
+// MAIN NOTIFICATIONS PAGE
+// ---------------------------------------------------------
+
 export default function Notifications() {
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
+
   const [events, setEvents] = useState([]);
   const [selectedEventId, setSelectedEventId] = useState("all");
 
@@ -230,6 +280,7 @@ export default function Notifications() {
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+
   const [processingId, setProcessingId] = useState("");
   const [markingAll, setMarkingAll] = useState(false);
 
@@ -238,6 +289,10 @@ export default function Notifications() {
 
   const mountedRef = useRef(false);
   const requestInProgress = useRef(false);
+
+  // -------------------------------------------------------
+  // LOAD NOTIFICATIONS
+  // -------------------------------------------------------
 
   const loadData = useCallback(async (showRefreshing = false) => {
     if (requestInProgress.current) return;
@@ -249,14 +304,17 @@ export default function Notifications() {
     }
 
     try {
-      const [notificationResponse, countResponse, eventsResponse] =
-        await Promise.all([
-          getNotifications({ limit: 100, skip: 0 }),
-          getUnreadNotificationCount(),
-          typeof getEvents === "function"
-            ? getEvents().catch(() => [])
-            : Promise.resolve([]),
-        ]);
+      const [
+        notificationResponse,
+        countResponse,
+        eventsResponse,
+      ] = await Promise.all([
+        getNotifications({ limit: 100, skip: 0 }),
+        getUnreadNotificationCount(),
+        typeof getEvents === "function"
+          ? getEvents().catch(() => [])
+          : Promise.resolve([]),
+      ]);
 
       if (!mountedRef.current) return;
 
@@ -272,20 +330,34 @@ export default function Notifications() {
       ).length;
 
       const sortedItems = [...items].sort((a, b) => {
-        const dateA = getNotificationDate(a)?.getTime() ?? 0;
-        const dateB = getNotificationDate(b)?.getTime() ?? 0;
+        const dateA =
+          getNotificationDate(a)?.getTime() ?? 0;
+
+        const dateB =
+          getNotificationDate(b)?.getTime() ?? 0;
+
         return dateB - dateA;
       });
 
       setNotifications(sortedItems);
+
       setUnreadCount(
-        Math.max(0, Number(unreadFromResponse ?? unreadFromItems) || 0)
+        Math.max(
+          0,
+          Number(unreadFromResponse ?? unreadFromItems) || 0
+        )
       );
-      setEvents(getArray(eventsResponse, ["events", "items"]));
+
+      setEvents(
+        getArray(eventsResponse, ["events", "items"])
+      );
+
       setError("");
     } catch (err) {
       if (mountedRef.current) {
-        setError(err?.message || "Unable to load notifications.");
+        setError(
+          err?.message || "Unable to load notifications."
+        );
       }
     } finally {
       requestInProgress.current = false;
@@ -297,32 +369,59 @@ export default function Notifications() {
     }
   }, []);
 
+  // -------------------------------------------------------
+  // INITIAL LOAD + AUTOMATIC POLLING
+  // -------------------------------------------------------
+
   useEffect(() => {
     mountedRef.current = true;
 
     loadData();
 
     const intervalId = window.setInterval(() => {
-      if (!document.hidden) loadData();
+      if (!document.hidden) {
+        loadData();
+      }
     }, POLLING_INTERVAL);
 
     const handleVisibility = () => {
-      if (!document.hidden) loadData();
+      if (!document.hidden) {
+        loadData();
+      }
     };
 
     window.addEventListener("focus", handleVisibility);
-    document.addEventListener("visibilitychange", handleVisibility);
+
+    document.addEventListener(
+      "visibilitychange",
+      handleVisibility
+    );
 
     return () => {
       mountedRef.current = false;
+
       window.clearInterval(intervalId);
-      window.removeEventListener("focus", handleVisibility);
-      document.removeEventListener("visibilitychange", handleVisibility);
+
+      window.removeEventListener(
+        "focus",
+        handleVisibility
+      );
+
+      document.removeEventListener(
+        "visibilitychange",
+        handleVisibility
+      );
     };
   }, [loadData]);
 
+  // -------------------------------------------------------
+  // EVENT FILTERING
+  // -------------------------------------------------------
+
   const scopedNotifications = useMemo(() => {
-    if (selectedEventId === "all") return notifications;
+    if (selectedEventId === "all") {
+      return notifications;
+    }
 
     return notifications.filter((notification) => {
       const relatedId =
@@ -331,17 +430,24 @@ export default function Notifications() {
         notification?.metadata?.event_id ??
         notification?.data?.event_id;
 
-      // Keep general notifications visible when an event filter is selected.
+      // Keep general notifications visible when an event
+      // filter is selected.
       if (relatedId == null) return true;
 
       return String(relatedId) === selectedEventId;
     });
   }, [notifications, selectedEventId]);
 
+  // -------------------------------------------------------
+  // APPROVAL NOTIFICATIONS
+  // -------------------------------------------------------
+
   const approvalRows = useMemo(
     () =>
       scopedNotifications
-        .filter((item) => getCategory(item) === "Approval")
+        .filter(
+          (item) => getCategory(item) === "Approval"
+        )
         .map(getApprovalRow),
     [scopedNotifications]
   );
@@ -350,9 +456,17 @@ export default function Notifications() {
     ? approvalRows
     : approvalRows.slice(0, APPROVAL_PREVIEW_COUNT);
 
+  // -------------------------------------------------------
+  // RECENT NOTIFICATIONS
+  // -------------------------------------------------------
+
   const visibleRecent = showAllRecent
     ? scopedNotifications
     : scopedNotifications.slice(0, RECENT_PREVIEW_COUNT);
+
+  // -------------------------------------------------------
+  // SUMMARY STATISTICS
+  // -------------------------------------------------------
 
   const stats = useMemo(() => {
     const eventReminders = scopedNotifications.filter(
@@ -365,16 +479,26 @@ export default function Notifications() {
 
     return {
       total: scopedNotifications.length,
-      unread: scopedNotifications.filter((item) => !item?.is_read).length,
+
+      unread: scopedNotifications.filter(
+        (item) => !item?.is_read
+      ).length,
+
       eventReminders,
       approvalAlerts,
     };
   }, [scopedNotifications]);
 
+  // -------------------------------------------------------
+  // MARK SINGLE NOTIFICATION AS READ
+  // -------------------------------------------------------
+
   async function handleMarkRead(notification) {
     const id = getNotificationId(notification);
 
-    if (!id || notification?.is_read || processingId) return;
+    if (!id || notification?.is_read || processingId) {
+      return;
+    }
 
     setProcessingId(id);
     setError("");
@@ -393,13 +517,24 @@ export default function Notifications() {
         )
       );
 
-      setUnreadCount((previous) => Math.max(0, previous - 1));
+      setUnreadCount((previous) =>
+        Math.max(0, previous - 1)
+      );
     } catch (err) {
-      setError(err?.message || "Unable to mark notification as read.");
+      setError(
+        err?.message ||
+          "Unable to mark notification as read."
+      );
     } finally {
-      if (mountedRef.current) setProcessingId("");
+      if (mountedRef.current) {
+        setProcessingId("");
+      }
     }
   }
+
+  // -------------------------------------------------------
+  // MARK ALL NOTIFICATIONS AS READ
+  // -------------------------------------------------------
 
   async function handleMarkAllRead() {
     if (unreadCount === 0 || markingAll) return;
@@ -414,26 +549,43 @@ export default function Notifications() {
       if (!mountedRef.current) return;
 
       setNotifications((previous) =>
-        previous.map((item) => ({ ...item, is_read: true }))
+        previous.map((item) => ({
+          ...item,
+          is_read: true,
+        }))
       );
 
       setUnreadCount(0);
-      setSuccessMessage("All notifications marked as read.");
+
+      setSuccessMessage(
+        "All notifications marked as read."
+      );
     } catch (err) {
-      setError(err?.message || "Unable to mark all notifications as read.");
+      setError(
+        err?.message ||
+          "Unable to mark all notifications as read."
+      );
     } finally {
-      if (mountedRef.current) setMarkingAll(false);
+      if (mountedRef.current) {
+        setMarkingAll(false);
+      }
     }
   }
+
+  // -------------------------------------------------------
+  // DELETE NOTIFICATION
+  // -------------------------------------------------------
 
   async function handleDelete(notification) {
     const id = getNotificationId(notification);
 
     if (!id || processingId) return;
 
-    if (!window.confirm("Delete this notification? This cannot be undone.")) {
-      return;
-    }
+    const confirmed = window.confirm(
+      "Delete this notification? This cannot be undone."
+    );
+
+    if (!confirmed) return;
 
     setProcessingId(id);
     setError("");
@@ -445,40 +597,79 @@ export default function Notifications() {
       if (!mountedRef.current) return;
 
       setNotifications((previous) =>
-        previous.filter((item) => getNotificationId(item) !== id)
+        previous.filter(
+          (item) => getNotificationId(item) !== id
+        )
       );
 
       if (!notification?.is_read) {
-        setUnreadCount((previous) => Math.max(0, previous - 1));
+        setUnreadCount((previous) =>
+          Math.max(0, previous - 1)
+        );
       }
 
-      setSuccessMessage("Notification deleted successfully.");
+      setSuccessMessage(
+        "Notification deleted successfully."
+      );
     } catch (err) {
-      setError(err?.message || "Unable to delete notification.");
+      setError(
+        err?.message ||
+          "Unable to delete notification."
+      );
     } finally {
-      if (mountedRef.current) setProcessingId("");
+      if (mountedRef.current) {
+        setProcessingId("");
+      }
     }
   }
 
+  // -------------------------------------------------------
+  // NOTIFICATION TONE ICON
+  // -------------------------------------------------------
+
   function renderToneIcon(tone) {
-    if (tone === "success") return <Check size={17} />;
-    if (tone === "danger") return <CircleAlert size={17} />;
-    if (tone === "warning") return <Clock3 size={17} />;
+    if (tone === "success") {
+      return <Check size={17} />;
+    }
+
+    if (tone === "danger") {
+      return <CircleAlert size={17} />;
+    }
+
+    if (tone === "warning") {
+      return <Clock3 size={17} />;
+    }
+
     return <Bell size={17} />;
   }
 
+  // -------------------------------------------------------
+  // RENDER
+  // -------------------------------------------------------
+
   return (
     <section className="notifications-page">
+
+      {/* PAGE HEADER */}
       <header className="notifications-page-header">
         <div className="notifications-header-title">
-          <span className="notifications-header-icon" aria-hidden="true">
+          <span
+            className="notifications-header-icon"
+            aria-hidden="true"
+          >
             <Bell size={25} strokeWidth={1.8} />
           </span>
 
           <div>
-            <p className="notifications-eyebrow">WORKFLOW AUTOMATION</p>
+            <p className="notifications-eyebrow">
+              WORKFLOW AUTOMATION
+            </p>
+
             <h2>Notifications</h2>
-            <p>Event updates, reminders and approval notifications</p>
+
+            <p>
+              Event updates, reminders and approval notifications
+            </p>
           </div>
         </div>
 
@@ -486,7 +677,9 @@ export default function Notifications() {
           <select
             className="notifications-event-select"
             value={selectedEventId}
-            onChange={(event) => setSelectedEventId(event.target.value)}
+            onChange={(event) =>
+              setSelectedEventId(event.target.value)
+            }
             aria-label="Filter notifications by event"
           >
             <option value="all">All events</option>
@@ -495,7 +688,10 @@ export default function Notifications() {
               const id = getId(event);
 
               return (
-                <option value={id} key={id || `event-${index}`}>
+                <option
+                  value={id}
+                  key={id || `event-${index}`}
+                >
                   {getEventName(event)}
                 </option>
               );
@@ -508,7 +704,11 @@ export default function Notifications() {
             onClick={() => loadData(true)}
             disabled={loading || refreshing}
           >
-            <RefreshCw size={15} />
+            <RefreshCw
+              size={15}
+              className={refreshing ? "is-spinning" : ""}
+            />
+
             {refreshing ? "Refreshing..." : "Refresh"}
           </button>
 
@@ -519,18 +719,24 @@ export default function Notifications() {
             disabled={unreadCount === 0 || markingAll}
           >
             <CheckCheck size={16} />
-            {markingAll ? "Marking..." : `Mark all read (${unreadCount})`}
+
+            {markingAll
+              ? "Marking..."
+              : `Mark all read (${unreadCount})`}
           </button>
         </div>
       </header>
 
+      {/* ERROR MESSAGE */}
       {error && (
         <div
           className="notifications-alert notifications-alert-error"
           role="alert"
         >
           <CircleAlert size={17} />
+
           <span>{error}</span>
+
           <button
             type="button"
             onClick={() => setError("")}
@@ -541,13 +747,16 @@ export default function Notifications() {
         </div>
       )}
 
+      {/* SUCCESS MESSAGE */}
       {successMessage && (
         <div
           className="notifications-alert notifications-alert-success"
           role="status"
         >
           <CheckCircleIcon />
+
           <span>{successMessage}</span>
+
           <button
             type="button"
             onClick={() => setSuccessMessage("")}
@@ -558,14 +767,20 @@ export default function Notifications() {
         </div>
       )}
 
+      {/* SUMMARY CARDS */}
       <section className="notifications-summary-grid">
+
         <article className="notifications-summary-card summary-emails">
           <span className="notifications-summary-icon">
             <Inbox size={21} />
           </span>
+
           <div>
             <span>Total Notifications</span>
-            <strong>{loading ? "—" : stats.total}</strong>
+
+            <strong>
+              {loading ? "—" : stats.total}
+            </strong>
           </div>
         </article>
 
@@ -573,9 +788,13 @@ export default function Notifications() {
           <span className="notifications-summary-icon">
             <Bell size={21} />
           </span>
+
           <div>
             <span>Unread Notifications</span>
-            <strong>{loading ? "—" : stats.unread}</strong>
+
+            <strong>
+              {loading ? "—" : stats.unread}
+            </strong>
           </div>
         </article>
 
@@ -583,15 +802,24 @@ export default function Notifications() {
           <span className="notifications-summary-icon">
             <ShieldCheck size={21} />
           </span>
+
           <div>
             <span>Approval Alerts</span>
-            <strong>{loading ? "—" : stats.approvalAlerts}</strong>
+
+            <strong>
+              {loading ? "—" : stats.approvalAlerts}
+            </strong>
           </div>
         </article>
+
       </section>
 
+      {/* MAIN CONTENT */}
       <div className="notifications-layout">
+
+        {/* EVENT UPDATES */}
         <section className="notifications-panel notifications-reminders-panel">
+
           <div className="notifications-panel-header">
             <h3>
               <CalendarDays size={18} />
@@ -600,14 +828,16 @@ export default function Notifications() {
           </div>
 
           <div className="notifications-panel-body">
+
             <div className="notifications-next-reminder">
               <span aria-hidden="true">
                 <Bell size={19} />
               </span>
+
               <p>
-                Event reminders are generated automatically by the reminder
-                scheduler. New reminders will appear here when the backend
-                creates them.
+                Event reminders are generated automatically
+                by the reminder scheduler. New reminders will
+                appear here when the backend creates them.
               </p>
             </div>
 
@@ -628,11 +858,16 @@ export default function Notifications() {
                   : "Event reminders and updates will appear here when generated."}
               </p>
             </div>
+
           </div>
         </section>
 
+        {/* RIGHT COLUMN */}
         <div className="notifications-right-column">
+
+          {/* APPROVAL NOTIFICATIONS */}
           <section className="notifications-panel">
+
             <div className="notifications-panel-header">
               <h3>
                 <ShieldCheck size={18} />
@@ -643,7 +878,9 @@ export default function Notifications() {
                 <button
                   type="button"
                   className="notifications-view-all"
-                  onClick={() => setShowAllApprovals((value) => !value)}
+                  onClick={() =>
+                    setShowAllApprovals((value) => !value)
+                  }
                 >
                   {showAllApprovals ? "Show less" : "View All"} →
                 </button>
@@ -651,7 +888,9 @@ export default function Notifications() {
             </div>
 
             {loading ? (
-              <div className="notifications-empty">Loading approvals...</div>
+              <div className="notifications-empty">
+                Loading approvals...
+              </div>
             ) : approvalRows.length === 0 ? (
               <div className="notifications-empty">
                 <Inbox size={22} />
@@ -659,6 +898,7 @@ export default function Notifications() {
               </div>
             ) : (
               <div className="notifications-table-wrap">
+
                 <table className="notifications-table">
                   <thead>
                     <tr>
@@ -671,9 +911,15 @@ export default function Notifications() {
 
                   <tbody>
                     {visibleApprovalRows.map((row, index) => (
-                      <tr key={row.id || `approval-${index}`}>
+                      <tr
+                        key={row.id || `approval-${index}`}
+                      >
                         <td>{row.item}</td>
-                        <td>{formatMoney(row.amount)}</td>
+
+                        <td>
+                          {formatMoney(row.amount)}
+                        </td>
+
                         <td>
                           <span
                             className={`notifications-status status-${row.status.toLowerCase()}`}
@@ -681,16 +927,21 @@ export default function Notifications() {
                             {row.status}
                           </span>
                         </td>
+
                         <td>{formatDate(row.date)}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
+
               </div>
             )}
+
           </section>
 
+          {/* RECENT NOTIFICATIONS */}
           <section className="notifications-panel">
+
             <div className="notifications-panel-header">
               <h3>
                 <Bell size={18} />
@@ -701,7 +952,9 @@ export default function Notifications() {
                 <button
                   type="button"
                   className="notifications-view-all"
-                  onClick={() => setShowAllRecent((value) => !value)}
+                  onClick={() =>
+                    setShowAllRecent((value) => !value)
+                  }
                 >
                   {showAllRecent ? "Show less" : "View All"} →
                 </button>
@@ -731,7 +984,8 @@ export default function Notifications() {
                   const tone = getTone(notification);
                   const isRead = Boolean(notification?.is_read);
                   const busy = processingId === id;
-                  const createdAt = getNotificationDate(notification);
+                  const createdAt =
+                    getNotificationDate(notification);
 
                   return (
                     <li
@@ -750,13 +1004,23 @@ export default function Notifications() {
                       <button
                         type="button"
                         className="notifications-recent-text"
-                        onClick={() => handleMarkRead(notification)}
+                        onClick={() =>
+                          handleMarkRead(notification)
+                        }
                         disabled={busy || isRead}
-                        title={isRead ? "Already read" : "Mark as read"}
+                        title={
+                          isRead
+                            ? "Already read"
+                            : "Mark as read"
+                        }
                       >
-                        {notification?.title && notification?.message ? (
+                        {notification?.title &&
+                        notification?.message ? (
                           <>
-                            <strong>{notification.title}: </strong>
+                            <strong>
+                              {notification.title}:{" "}
+                            </strong>
+
                             {notification.message}
                           </>
                         ) : (
@@ -774,13 +1038,18 @@ export default function Notifications() {
 
                       <span className="notifications-recent-date">
                         {formatDate(createdAt)}
-                        {createdAt ? ` · ${formatTime(createdAt)}` : ""}
+
+                        {createdAt
+                          ? ` · ${formatTime(createdAt)}`
+                          : ""}
                       </span>
 
                       <button
                         type="button"
                         className="notifications-recent-delete"
-                        onClick={() => handleDelete(notification)}
+                        onClick={() =>
+                          handleDelete(notification)
+                        }
                         disabled={busy}
                         aria-label="Delete notification"
                         title="Delete notification"
@@ -792,19 +1061,30 @@ export default function Notifications() {
                 })}
               </ul>
             )}
+
           </section>
         </div>
       </div>
 
+      {/* FOOTER */}
       <p className="notifications-footer-note">
         <Clock3 size={14} />
-        Notifications refresh automatically every 10 seconds while this page
-        is open. Select an unread notification to mark it as read.
+
+        Notifications refresh automatically every 10 seconds
+        while this page is open. Select an unread notification
+        to mark it as read.
       </p>
+
     </section>
   );
 }
 
+// ---------------------------------------------------------
+// SUCCESS ICON
+// ---------------------------------------------------------
+
 function CheckCircleIcon() {
-  return <Check size={17} aria-hidden="true" />;
+  return (
+    <Check size={17} aria-hidden="true" />
+  );
 }
