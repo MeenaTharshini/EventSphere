@@ -1,7 +1,7 @@
 
 # routes/events.py
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timezone, timedelta
 from typing import Any, Optional
 import logging
 
@@ -13,9 +13,14 @@ from routes.auth import get_current_user
 from .notifications import create_notification
 
 
-router = APIRouter(prefix="/api/events", tags=["Events"])
+router = APIRouter(
+    prefix="/api/events",
+    tags=["Events"],
+)
 
 logger = logging.getLogger(__name__)
+
+IST = timezone(timedelta(hours=5, minutes=30))
 
 
 # ---------------------------------------------------------
@@ -29,6 +34,7 @@ class EventCreate(BaseModel):
     )
 
     name: str = Field(..., min_length=2, max_length=150)
+
     event_type: str = Field(
         default="Conference",
         min_length=1,
@@ -46,7 +52,9 @@ class EventCreate(BaseModel):
     venue: Optional[str] = None
     venue_name: Optional[str] = None
 
-    attendee_count: int = Field(default=0, ge=0)
+    # attendee_count is intentionally excluded.
+    # It is managed by attendee registration/cancellation routes.
+
     status: str = "Scheduled"
     budget: float = Field(default=0, ge=0)
 
@@ -79,7 +87,8 @@ class EventUpdate(BaseModel):
     venue: Optional[str] = None
     venue_name: Optional[str] = None
 
-    attendee_count: Optional[int] = Field(default=None, ge=0)
+    # attendee_count is intentionally excluded.
+
     status: Optional[str] = None
     budget: Optional[float] = Field(default=None, ge=0)
 
@@ -96,10 +105,11 @@ VALID_STATUSES = {
     "upcoming": "Scheduled",
     "scheduled": "Scheduled",
     "confirmed": "Confirmed",
-    "ongoing": "Confirmed",
-    "completed": "Confirmed",
+    "ongoing": "Ongoing",
+    "completed": "Completed",
     "pending": "Pending",
     "cancelled": "Cancelled",
+    "canceled": "Cancelled",
 }
 
 
@@ -127,7 +137,10 @@ def get_user_id(user: dict) -> str:
     if user_id is None or not str(user_id).strip():
         raise HTTPException(
             status_code=401,
-            detail="Unable to identify the logged-in user. Please log in again.",
+            detail=(
+                "Unable to identify the logged-in user. "
+                "Please log in again."
+            ),
         )
 
     return str(user_id)
@@ -138,11 +151,16 @@ def get_user_id(user: dict) -> str:
 # ---------------------------------------------------------
 
 def normalize_role(user: dict) -> str:
-    return str(user.get("role") or "").strip().lower()
+    return str(
+        user.get("role") or ""
+    ).strip().lower()
 
 
 def normalize_status(status: Any) -> Optional[str]:
-    value = str(status or "Scheduled").strip().lower()
+    value = str(
+        status or "Scheduled"
+    ).strip().lower()
+
     return VALID_STATUSES.get(value)
 
 
@@ -170,6 +188,18 @@ def normalize_id_list(values: Any) -> list[str]:
     return result
 
 
+def safe_attendee_count(event: dict) -> int:
+    """Read the backend-managed attendee count safely."""
+
+    try:
+        return max(
+            0,
+            int(event.get("attendee_count") or 0),
+        )
+    except (ValueError, TypeError, OverflowError):
+        return 0
+
+
 # ---------------------------------------------------------
 # DATE AND TIME HELPERS
 # ---------------------------------------------------------
@@ -179,16 +209,23 @@ def parse_date(value: Any) -> str:
 
     try:
         parsed = date.fromisoformat(value)
+
     except (ValueError, TypeError):
         raise HTTPException(
             status_code=400,
-            detail="Please provide a valid event date in YYYY-MM-DD format.",
+            detail=(
+                "Please provide a valid event date "
+                "in YYYY-MM-DD format."
+            ),
         )
 
     if parsed.isoformat() != value:
         raise HTTPException(
             status_code=400,
-            detail="Please provide a valid event date in YYYY-MM-DD format.",
+            detail=(
+                "Please provide a valid event date "
+                "in YYYY-MM-DD format."
+            ),
         )
 
     return value
@@ -199,29 +236,45 @@ def time_to_minutes(value: Any) -> int:
 
     try:
         parsed = datetime.strptime(value, "%H:%M")
+
     except (ValueError, TypeError):
         raise HTTPException(
             status_code=400,
-            detail="Please provide valid event times in HH:MM format.",
+            detail=(
+                "Please provide valid event times "
+                "in HH:MM format."
+            ),
         )
 
     if parsed.strftime("%H:%M") != value:
         raise HTTPException(
             status_code=400,
-            detail="Please provide valid event times in HH:MM format.",
+            detail=(
+                "Please provide valid event times "
+                "in HH:MM format."
+            ),
         )
 
     return parsed.hour * 60 + parsed.minute
 
 
-def event_datetime(event_date: Any, event_time: Any) -> datetime:
-    """Convert event date and time strings into a naive datetime."""
+def event_datetime(
+    event_date: Any,
+    event_time: Any,
+) -> datetime:
+    """
+    Convert event date and time into a naive local datetime.
+
+    Event date/time fields are treated as local event time.
+    Both sides of venue conflict checks use this convention.
+    """
 
     try:
         return datetime.strptime(
             f"{event_date} {event_time}",
             "%Y-%m-%d %H:%M",
         )
+
     except (ValueError, TypeError):
         raise HTTPException(
             status_code=400,
@@ -236,7 +289,9 @@ def event_datetime(event_date: Any, event_time: Any) -> datetime:
 def normalize_event(event: dict) -> dict:
     """Return event data using frontend-compatible field names."""
 
-    event_id = str(event.get("_id", event.get("id", "")))
+    event_id = str(
+        event.get("_id", event.get("id", ""))
+    )
 
     event_type = (
         event.get("event_type")
@@ -250,7 +305,10 @@ def normalize_event(event: dict) -> dict:
         or ""
     )
 
-    end_date = event.get("end_date") or event_date
+    end_date = (
+        event.get("end_date")
+        or event_date
+    )
 
     venue_id = event.get(
         "venue_id",
@@ -263,33 +321,53 @@ def normalize_event(event: dict) -> dict:
         or None
     )
 
+    normalized_status = (
+        normalize_status(event.get("status"))
+        or "Scheduled"
+    )
+
     result = {
         **event,
+
         "_id": event_id,
         "id": event_id,
+
         "event_type": event_type,
+
         "event_date": event_date,
         "end_date": end_date,
         "date": event_date,
+
         "venue_id": (
             str(venue_id)
             if venue_id is not None
             else None
         ),
+
         "venue_name": venue_name,
-        "start_time": event.get("start_time") or "10:00",
-        "end_time": event.get("end_time") or "16:00",
-        "attendee_count": int(
-            event.get("attendee_count") or 0
+
+        "start_time": (
+            event.get("start_time")
+            or "10:00"
         ),
-        "status": (
-            normalize_status(event.get("status"))
-            or "Scheduled"
+
+        "end_time": (
+            event.get("end_time")
+            or "16:00"
         ),
-        "budget": float(event.get("budget") or 0),
+
+        "attendee_count": safe_attendee_count(event),
+
+        "status": normalized_status,
+
+        "budget": float(
+            event.get("budget") or 0
+        ),
+
         "resource_ids": normalize_id_list(
             event.get("resource_ids")
         ),
+
         "vendor_ids": normalize_id_list(
             event.get("vendor_ids")
         ),
@@ -305,16 +383,20 @@ def normalize_event(event: dict) -> dict:
 # FIND HELPERS
 # ---------------------------------------------------------
 
-def find_event(request: Request, event_id: str) -> dict:
+def find_event(
+    request: Request,
+    event_id: str,
+) -> dict:
+
     if not ObjectId.is_valid(event_id):
         raise HTTPException(
             status_code=400,
             detail="Invalid event ID.",
         )
 
-    event = get_events_collection(request).find_one(
-        {"_id": ObjectId(event_id)}
-    )
+    event = get_events_collection(request).find_one({
+        "_id": ObjectId(event_id),
+    })
 
     if not event:
         raise HTTPException(
@@ -337,22 +419,24 @@ def find_venue(
     value = str(venue_id).strip()
 
     if ObjectId.is_valid(value):
-        venue = venues.find_one(
-            {"_id": ObjectId(value)}
-        )
+        venue = venues.find_one({
+            "_id": ObjectId(value),
+        })
 
         if venue:
             return venue
 
-    venue = venues.find_one({"id": value})
+    venue = venues.find_one({
+        "id": value,
+    })
 
     if venue:
         return venue
 
     if value.isdigit():
-        venue = venues.find_one(
-            {"id": int(value)}
-        )
+        venue = venues.find_one({
+            "id": int(value),
+        })
 
         if venue:
             return venue
@@ -380,7 +464,7 @@ def send_vendor_assignment_notification(
     Notify the vendor account when an event is assigned.
 
     Event vendor_ids contain vendor profile IDs.
-    Notification recipient_id must contain the vendor account user_id.
+    Notification recipient_id contains the vendor account user_id.
     """
 
     try:
@@ -391,9 +475,9 @@ def send_vendor_assignment_notification(
             )
             return False
 
-        vendor = get_vendors_collection(request).find_one(
-            {"_id": ObjectId(vendor_id)}
-        )
+        vendor = get_vendors_collection(request).find_one({
+            "_id": ObjectId(vendor_id),
+        })
 
         if not vendor:
             logger.warning(
@@ -412,6 +496,7 @@ def send_vendor_assignment_notification(
             return False
 
         event_name = event.get("name") or "an event"
+
         event_date = (
             event.get("event_date")
             or event.get("date")
@@ -431,10 +516,11 @@ def send_vendor_assignment_notification(
             "Please check your assigned events for details."
         )
 
-        created_at = event.get("updated_at") or event.get("created_at")
+        created_at = (
+            event.get("updated_at")
+            or event.get("created_at")
+        )
 
-        # A different assignment timestamp allows a vendor to receive
-        # a fresh notification if they are removed and later reassigned.
         assignment_stamp = (
             created_at.isoformat()
             if isinstance(created_at, datetime)
@@ -467,7 +553,6 @@ def send_vendor_assignment_notification(
         return True
 
     except Exception:
-        # Notifications must never cause event creation or updates to fail.
         logger.exception(
             "Failed to notify vendor %s about event %s",
             vendor_id,
@@ -499,7 +584,9 @@ def notify_assigned_vendors(
 
 def validate_payload(payload: dict) -> dict:
 
-    name = str(payload.get("name") or "").strip()
+    name = str(
+        payload.get("name") or ""
+    ).strip()
 
     if len(name) < 2:
         raise HTTPException(
@@ -514,11 +601,13 @@ def validate_payload(payload: dict) -> dict:
         )
 
     event_date = parse_date(
-        payload.get("event_date") or payload.get("date")
+        payload.get("event_date")
+        or payload.get("date")
     )
 
     end_date = parse_date(
-        payload.get("end_date") or event_date
+        payload.get("end_date")
+        or event_date
     )
 
     start_time = str(
@@ -551,33 +640,7 @@ def validate_payload(payload: dict) -> dict:
             ),
         )
 
-    # Attendee count validation.
-    original_attendee_count = payload.get(
-        "attendee_count",
-        0,
-    )
-
-    try:
-        attendee_count = int(
-            original_attendee_count or 0
-        )
-
-        if float(original_attendee_count or 0) != attendee_count:
-            raise ValueError()
-
-    except (ValueError, TypeError, OverflowError):
-        raise HTTPException(
-            status_code=400,
-            detail="Attendee count must be a non-negative whole number.",
-        )
-
-    if attendee_count < 0:
-        raise HTTPException(
-            status_code=400,
-            detail="Attendee count must be a non-negative whole number.",
-        )
-
-    # Status validation.
+    # Validate status.
     status = normalize_status(
         payload.get("status")
     )
@@ -588,12 +651,13 @@ def validate_payload(payload: dict) -> dict:
             detail="Invalid event status.",
         )
 
-    # Budget validation.
+    # Validate budget.
     try:
         budget = float(
             payload.get("budget", 0) or 0
         )
-    except (ValueError, TypeError):
+
+    except (ValueError, TypeError, OverflowError):
         raise HTTPException(
             status_code=400,
             detail="Invalid event budget.",
@@ -636,9 +700,11 @@ def validate_payload(payload: dict) -> dict:
     payload["start_time"] = start_time
     payload["end_time"] = end_time
 
-    payload["attendee_count"] = attendee_count
     payload["status"] = status
     payload["budget"] = budget
+
+    # Do not calculate or accept attendee_count here.
+    # The caller must preserve/set its backend-managed value.
 
     return payload
 
@@ -862,18 +928,22 @@ def validate_venue_and_capacity(
         capacity = int(
             venue.get("capacity") or 0
         )
-    except (ValueError, TypeError):
+
+    except (ValueError, TypeError, OverflowError):
         capacity = 0
+
+    # This count comes from the database, not the frontend.
+    attendee_count = safe_attendee_count(payload)
 
     if (
         capacity > 0
-        and payload["attendee_count"] > capacity
+        and attendee_count > capacity
     ):
         raise HTTPException(
             status_code=400,
             detail=(
-                f"This venue can accommodate "
-                f"{capacity} attendees only."
+                f"This venue can accommodate {capacity} attendees only. "
+                f"The event currently has {attendee_count} registered attendees."
             ),
         )
 
@@ -956,8 +1026,12 @@ def create_event(
 
     payload = data.model_dump()
 
+    # Attendee count is exclusively managed by registration routes.
+    payload["attendee_count"] = 0
+
     payload["event_type"] = (
-        payload.get("event_type") or "Conference"
+        payload.get("event_type")
+        or "Conference"
     )
 
     payload["event_date"] = (
@@ -1004,7 +1078,6 @@ def create_event(
 
     event_id = str(result.inserted_id)
 
-    # Notify every vendor assigned during event creation.
     notify_assigned_vendors(
         request=request,
         event_id=event_id,
@@ -1059,9 +1132,12 @@ def update_event(
         )
     )
 
-    # Preserve omitted fields.
+    # Preserve existing fields.
     payload = normalize_event(existing)
     payload.update(updates)
+
+    # Attendee count must never be overwritten by event updates.
+    payload["attendee_count"] = safe_attendee_count(existing)
 
     # Maintain compatibility between date and event_date.
     if (
@@ -1131,7 +1207,6 @@ def update_event(
         {"$set": payload},
     )
 
-    # Notify only newly assigned vendors.
     if newly_assigned_vendor_ids:
         notify_assigned_vendors(
             request=request,
@@ -1168,9 +1243,9 @@ def delete_event(
         event,
     )
 
-    get_events_collection(request).delete_one(
-        {"_id": event["_id"]}
-    )
+    get_events_collection(request).delete_one({
+        "_id": event["_id"],
+    })
 
     return {
         "message": "Event deleted successfully.",
@@ -1185,10 +1260,8 @@ def is_event_completed(event: dict) -> bool:
     """
     Return True when the event's end date/time has passed.
 
-    Event dates use YYYY-MM-DD and times use HH:MM.
-    If end_date is missing, event_date/date is used.
-
-    This helper retains the existing UTC comparison convention.
+    Event date/time values are interpreted in IST,
+    matching the attendee registration route.
     """
 
     event_date = (
@@ -1211,12 +1284,12 @@ def is_event_completed(event: dict) -> bool:
         completion_datetime = datetime.strptime(
             f"{end_date} {end_time}",
             "%Y-%m-%d %H:%M",
-        ).replace(tzinfo=timezone.utc)
+        ).replace(tzinfo=IST)
 
     except (ValueError, TypeError):
         return False
 
     return (
         completion_datetime
-        <= datetime.now(timezone.utc)
+        <= datetime.now(IST)
     )

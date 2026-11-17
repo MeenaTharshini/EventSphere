@@ -263,6 +263,7 @@ def get_event_venue(event: dict) -> str:
     return str(value)
 
 
+
 def send_attendee_notification(
     db,
     recipient_id: str,
@@ -274,21 +275,21 @@ def send_attendee_notification(
     related_type: str,
     metadata: dict | None = None,
 ) -> None:
-    """
-    Send a notification without interrupting the main operation.
+    """Create and verify an attendee notification."""
 
-    A notification failure must not undo a successful registration
-    or cancellation.
-    """
+    recipient_id = str(recipient_id or "").strip()
+
+    print("\n========== ATTENDEE NOTIFICATION DEBUG ==========")
+    print("Recipient ID:", recipient_id)
+    print("Title:", title)
+    print("Category:", category)
 
     if not recipient_id:
-        print(
-            "Notification skipped: recipient ID is missing."
-        )
+        print("FAILED: Recipient ID is missing.")
         return
 
     try:
-        create_notification(
+        notification_id = create_notification(
             db=db,
             recipient_id=recipient_id,
             title=title,
@@ -300,11 +301,25 @@ def send_attendee_notification(
             metadata=metadata or {},
         )
 
+        print("Notification ID:", notification_id)
+
+        saved_notification = db["notifications"].find_one({
+            "_id": ObjectId(notification_id)
+        }) if notification_id else None
+
+        print("Notification saved:", saved_notification is not None)
+
+        if saved_notification:
+            print("Saved recipient:", saved_notification.get("recipient_id"))
+            print("Saved title:", saved_notification.get("title"))
+
+        print("=================================================\n")
+
     except Exception as exc:
         print(
-            "Attendee notification failed. "
-            f"Recipient: {recipient_id}; "
-            f"Error: {type(exc).__name__}: {exc}"
+            "NOTIFICATION ERROR:",
+            type(exc).__name__,
+            str(exc),
         )
 
 
@@ -528,8 +543,13 @@ def get_event_attendees(
             attendees_collection.find({
                 "event_id": event_id,
                 "status": {
-                    "$nin": ["Cancelled", "Canceled"]
-                },
+    "$nin": [
+        "Cancelled",
+        "Canceled",
+        "cancelled",
+        "canceled",
+    ]
+},
             }).sort("registered_at", -1)
         )
 
@@ -790,6 +810,7 @@ def update_attendee_registration(
     update_fields = {
         "name": data.name,
         "email": new_email,
+        "email_normalized": new_email,
         "phone": data.phone,
         "category": data.category,
         "updated_at": updated_at,
@@ -976,9 +997,21 @@ def register_attendee(
 
         existing_registration = attendees.find_one({
             "event_id": str(event_oid),
-            "email": account_email,
+            "email_normalized": account_email,
         })
+        print("\n========== REGISTRATION DEBUG ==========")
+        print("Authenticated user ID:", get_user_id(current_user))
+        print("Authenticated email:", account_email)
+        print("Submitted email:", submitted_email)
+        print("Selected event ID:", str(event_oid))
+        print("Existing registration:", existing_registration)
 
+        if existing_registration:
+            print("Existing registration ID:", existing_registration.get("_id"))
+            print("Existing registration email:", existing_registration.get("email"))
+            print("Existing registration status:", existing_registration.get("status"))
+
+        print("========================================\n")
     except PyMongoError:
         raise HTTPException(
             status_code=503,
@@ -987,10 +1020,12 @@ def register_attendee(
 
     # Prepare attendee data.
     attendee = {
+        "user_id": get_user_id(current_user),
         "name": str(
             current_user.get("name") or data.name
         ).strip(),
-        "email": account_email,
+        "email": account_email.strip().lower(),
+        "email_normalized": account_email.strip().lower(),
         "phone": data.phone.strip(),
         "event_id": str(event_oid),
         "event_name": get_event_name(event),
@@ -1007,11 +1042,11 @@ def register_attendee(
             existing_registration.get("status", "")
         ).strip().lower()
 
-        if existing_status != "cancelled":
+        if existing_status not in {"cancelled", "canceled"}:
             raise HTTPException(
                 status_code=409,
                 detail="You are already registered for this event.",
-            )
+        )
 
         registration_id = existing_registration["_id"]
 
@@ -1047,7 +1082,9 @@ def register_attendee(
             result = attendees.update_one(
                 {
                     "_id": registration_id,
-                    "status": "Cancelled",
+                    "status": {
+    "$in": ["Cancelled", "Canceled", "cancelled", "canceled"]
+},
                 },
                 {
                     "$set": attendee,
@@ -1081,11 +1118,18 @@ def register_attendee(
             result = attendees.insert_one(attendee)
             registration_id = result.inserted_id
 
-        except DuplicateKeyError:
+        except DuplicateKeyError as exc:
+            print("\n========== DUPLICATE KEY DEBUG ==========")
+            print("Error details:", exc.details)
+            print("Error message:", str(exc))
+            print("Attempted event ID:", str(event_oid))
+            print("Attempted email:", account_email)
+            print("=========================================\n")
+
             raise HTTPException(
-                status_code=409,
-                detail="You are already registered for this event.",
-            )
+        status_code=409,
+        detail="You are already registered for this event.",
+    )
 
         except PyMongoError:
             raise HTTPException(
@@ -1407,7 +1451,7 @@ def unregister_attendee(
 
     if str(
         registration.get("status", "")
-    ).strip().lower() == "cancelled":
+    ).strip().lower() in {"cancelled", "canceled"}:
         raise HTTPException(
             status_code=409,
             detail="This registration has already been cancelled.",
@@ -1419,7 +1463,9 @@ def unregister_attendee(
             {
                 "_id": registration_oid,
                 "email": account_email,
-                "status": {"$ne": "Cancelled"},
+                "status": {
+    "$nin": ["Cancelled", "Canceled", "cancelled", "canceled"]
+},
             },
             {
                 "$set": {
