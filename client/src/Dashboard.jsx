@@ -1,3 +1,4 @@
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
@@ -299,6 +300,7 @@ function formatNotificationDate(value) {
    NOTIFICATION CENTER
 ======================================================= */
 
+
 function NotificationCenter() {
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -310,38 +312,36 @@ function NotificationCenter() {
   const [error, setError] = useState("");
 
   const containerRef = useRef(null);
+  const requestInProgress = useRef(false);
+  const mountedRef = useRef(true);
+
+  // -------------------------------------------------------
+  // LOAD NOTIFICATIONS + UNREAD COUNT
+  // -------------------------------------------------------
 
   const loadNotifications = useCallback(async (showLoading = false) => {
-    if (showLoading) setLoading(true);
+    // Prevent multiple simultaneous polling requests.
+    if (requestInProgress.current) return;
+
+    requestInProgress.current = true;
+
+    if (showLoading && mountedRef.current) {
+      setLoading(true);
+    }
 
     try {
-      setError("");
-
       const [notificationResponse, countResponse] =
         await Promise.all([
           getNotifications({ limit: 8, skip: 0 }),
           getUnreadNotificationCount(),
         ]);
-        console.log(
-  "Notifications API response:",
-  notificationResponse
-);
 
-console.log(
-  "Unread count API response:",
-  countResponse
-);
+      if (!mountedRef.current) return;
 
-console.log(
-  "Current logged-in user:",
-  JSON.parse(localStorage.getItem("user") || "null")
-);
       const items = toArray(notificationResponse, [
         "notifications",
         "items",
       ]);
-
-      setNotifications(items);
 
       const count =
         countResponse?.unread_count ??
@@ -349,30 +349,80 @@ console.log(
         notificationResponse?.unread_count ??
         0;
 
+      setNotifications(items);
       setUnreadCount(Math.max(0, Number(count) || 0));
+      setError("");
     } catch (err) {
-      setError(
-        err?.message ||
-        "Unable to load notifications."
-      );
+      if (mountedRef.current) {
+        setError(
+          err?.message || "Unable to load notifications."
+        );
+      }
     } finally {
-      if (showLoading) setLoading(false);
+      requestInProgress.current = false;
+
+      if (mountedRef.current && showLoading) {
+        setLoading(false);
+      }
     }
   }, []);
 
-  /* Initial load and periodic refresh */
+  // -------------------------------------------------------
+  // INITIAL LOAD + AUTOMATIC REAL-TIME-LIKE POLLING
+  // -------------------------------------------------------
 
   useEffect(() => {
-    loadNotifications();
+    mountedRef.current = true;
 
+    // Load immediately when dashboard opens.
+    loadNotifications(true);
+
+    // Check for notifications every 5 seconds.
     const interval = window.setInterval(() => {
-      loadNotifications();
-    }, 60000);
+      if (!document.hidden) {
+        loadNotifications();
+      }
+    }, 5000);
 
-    return () => window.clearInterval(interval);
+    // Refresh immediately when user returns to the tab.
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        loadNotifications();
+      }
+    };
+
+    // Refresh when browser window gets focus.
+    const handleWindowFocus = () => {
+      loadNotifications();
+    };
+
+    document.addEventListener(
+      "visibilitychange",
+      handleVisibilityChange
+    );
+
+    window.addEventListener("focus", handleWindowFocus);
+
+    return () => {
+      mountedRef.current = false;
+
+      window.clearInterval(interval);
+
+      document.removeEventListener(
+        "visibilitychange",
+        handleVisibilityChange
+      );
+
+      window.removeEventListener(
+        "focus",
+        handleWindowFocus
+      );
+    };
   }, [loadNotifications]);
 
-  /* Close dropdown when clicking outside */
+  // -------------------------------------------------------
+  // CLOSE DROPDOWN WHEN CLICKING OUTSIDE
+  // -------------------------------------------------------
 
   useEffect(() => {
     function handleOutsideClick(event) {
@@ -406,6 +456,10 @@ console.log(
     };
   }, []);
 
+  // -------------------------------------------------------
+  // TOGGLE NOTIFICATION DROPDOWN
+  // -------------------------------------------------------
+
   const handleToggle = () => {
     const nextOpen = !open;
 
@@ -415,6 +469,10 @@ console.log(
       loadNotifications(true);
     }
   };
+
+  // -------------------------------------------------------
+  // MARK SINGLE NOTIFICATION AS READ
+  // -------------------------------------------------------
 
   const handleMarkRead = async (notification) => {
     const notificationId = getNotificationId(notification);
@@ -426,6 +484,8 @@ console.log(
 
     try {
       await markNotificationRead(notificationId);
+
+      if (!mountedRef.current) return;
 
       setNotifications((previous) =>
         previous.map((item) =>
@@ -440,13 +500,16 @@ console.log(
       );
     } catch (err) {
       setError(
-        err?.message ||
-        "Unable to mark notification as read."
+        err?.message || "Unable to mark notification as read."
       );
     } finally {
       setProcessingId("");
     }
   };
+
+  // -------------------------------------------------------
+  // MARK ALL NOTIFICATIONS AS READ
+  // -------------------------------------------------------
 
   const handleMarkAllRead = async () => {
     if (unreadCount === 0 || markingAll) return;
@@ -456,6 +519,8 @@ console.log(
 
     try {
       await markAllNotificationsRead();
+
+      if (!mountedRef.current) return;
 
       setNotifications((previous) =>
         previous.map((item) => ({
@@ -467,13 +532,16 @@ console.log(
       setUnreadCount(0);
     } catch (err) {
       setError(
-        err?.message ||
-        "Unable to mark all notifications as read."
+        err?.message || "Unable to mark all notifications as read."
       );
     } finally {
       setMarkingAll(false);
     }
   };
+
+  // -------------------------------------------------------
+  // DELETE NOTIFICATION
+  // -------------------------------------------------------
 
   const handleDelete = async (notification) => {
     const notificationId = getNotificationId(notification);
@@ -486,10 +554,11 @@ console.log(
     try {
       await deleteNotification(notificationId);
 
+      if (!mountedRef.current) return;
+
       setNotifications((previous) =>
         previous.filter(
-          (item) =>
-            getNotificationId(item) !== notificationId
+          (item) => getNotificationId(item) !== notificationId
         )
       );
 
@@ -500,13 +569,16 @@ console.log(
       }
     } catch (err) {
       setError(
-        err?.message ||
-        "Unable to delete notification."
+        err?.message || "Unable to delete notification."
       );
     } finally {
       setProcessingId("");
     }
   };
+
+  // -------------------------------------------------------
+  // UI
+  // -------------------------------------------------------
 
   return (
     <div
@@ -603,15 +675,12 @@ console.log(
                 size={23}
                 className="dashboard-spinning"
               />
-
               <p>Loading notifications...</p>
             </div>
           ) : notifications.length === 0 ? (
             <div className="dashboard-notification-empty">
               <Bell size={28} />
-
               <h4>No notifications</h4>
-
               <p>
                 Updates about registrations, expenses,
                 and events will appear here.
@@ -624,8 +693,7 @@ console.log(
                   getNotificationId(notification) ||
                   `notification-${index}`;
 
-                const busy =
-                  processingId === notificationId;
+                const busy = processingId === notificationId;
 
                 return (
                   <article
@@ -640,12 +708,8 @@ console.log(
                     <button
                       type="button"
                       className="dashboard-notification-content"
-                      onClick={() =>
-                        handleMarkRead(notification)
-                      }
-                      disabled={
-                        notification.is_read || busy
-                      }
+                      onClick={() => handleMarkRead(notification)}
+                      disabled={notification.is_read || busy}
                     >
                       <span className="dashboard-notification-indicator">
                         {notification.is_read ? (
@@ -657,8 +721,7 @@ console.log(
 
                       <span className="dashboard-notification-text">
                         <strong>
-                          {notification.title ||
-                            "Notification"}
+                          {notification.title || "Notification"}
                         </strong>
 
                         <span>
@@ -680,9 +743,7 @@ console.log(
                       aria-label="Delete notification"
                       title="Delete notification"
                       disabled={busy}
-                      onClick={() =>
-                        handleDelete(notification)
-                      }
+                      onClick={() => handleDelete(notification)}
                     >
                       {busy ? (
                         <LoaderCircle
@@ -701,16 +762,16 @@ console.log(
 
           <div className="dashboard-notification-footer">
             <button
-  type="button"
-  onClick={() => loadNotifications(true)}
-  disabled={loading}
->
-  <RefreshCw
-    size={14}
-    className={loading ? "dashboard-spinning" : ""}
-  />
-  Refresh notifications
-</button>
+              type="button"
+              onClick={() => loadNotifications(true)}
+              disabled={loading}
+            >
+              <RefreshCw
+                size={14}
+                className={loading ? "dashboard-spinning" : ""}
+              />
+              Refresh notifications
+            </button>
           </div>
         </div>
       )}
@@ -718,17 +779,12 @@ console.log(
   );
 }
 
+
 /* =======================================================
    REUSABLE COMPONENTS
 ======================================================= */
 
-function StatCard({
-  icon: Icon,
-  label,
-  value,
-  helper,
-  onClick,
-}) {
+function StatCard({ icon: Icon, label, value, helper, onClick }) {
   return (
     <button
       type="button"
@@ -740,17 +796,11 @@ function StatCard({
         <Icon size={21} />
       </span>
 
-      <span className="dashboard-stat-label">
-        {label}
-      </span>
+      <span className="dashboard-stat-label">{label}</span>
 
-      <strong className="dashboard-stat-value">
-        {value}
-      </strong>
+      <strong className="dashboard-stat-value">{value}</strong>
 
-      <span className="dashboard-stat-helper">
-        {helper}
-      </span>
+      <span className="dashboard-stat-helper">{helper}</span>
     </button>
   );
 }
@@ -871,29 +921,19 @@ function MiniCalendar({ events, onSelectDate }) {
               disabled={!day}
               aria-label={
                 day
-                  ? `${formatDate(
-                      new Date(year, month, day)
-                    )}${
-                      eventDays.has(day)
-                        ? ", has events"
-                        : ""
+                  ? `${formatDate(new Date(year, month, day))}${
+                      eventDays.has(day) ? ", has events" : ""
                     }`
                   : undefined
               }
               className={[
                 "dashboard-calendar-day",
                 isToday ? "today" : "",
-                day && eventDays.has(day)
-                  ? "has-event"
-                  : "",
-              ]
-                .filter(Boolean)
-                .join(" ")}
+                day && eventDays.has(day) ? "has-event" : "",
+              ].filter(Boolean).join(" ")}
               onClick={() => {
                 if (day) {
-                  onSelectDate?.(
-                    new Date(year, month, day)
-                  );
+                  onSelectDate?.(new Date(year, month, day));
                 }
               }}
             >
@@ -969,15 +1009,12 @@ function ExpenseApprovals({ user }) {
             )
             .map((expense) => ({
               ...expense,
-
               event_id: expense.event_id || eventId,
-
               event_name:
                 returnedEvent?.name ||
                 returnedEvent?.title ||
                 returnedEvent?.event_name ||
                 getEventName(event),
-
               event_date:
                 returnedEvent?.event_date ??
                 returnedEvent?.date ??
@@ -1029,8 +1066,7 @@ function ExpenseApprovals({ user }) {
       }
     } catch (err) {
       setError(
-        err?.message ||
-        "Unable to load pending approvals."
+        err?.message || "Unable to load pending approvals."
       );
     } finally {
       setLoading(false);
@@ -1082,9 +1118,7 @@ function ExpenseApprovals({ user }) {
 
     const confirmed = window.confirm(
       action === "approve"
-        ? `Approve "${expense.description || "this expense"}" for ${money(
-            expense.amount
-          )}?`
+        ? `Approve "${expense.description || "this expense"}" for ${money(expense.amount)}?`
         : `Reject "${expense.description || "this expense"}"?`
     );
 
@@ -1097,21 +1131,13 @@ function ExpenseApprovals({ user }) {
     try {
       const endpoint =
         action === "approve"
-          ? `/budgets/expenses/${encodeURIComponent(
-              expenseId
-            )}/approve`
-          : `/budgets/expenses/${encodeURIComponent(
-              expenseId
-            )}/reject`;
+          ? `/budgets/expenses/${encodeURIComponent(expenseId)}/approve`
+          : `/budgets/expenses/${encodeURIComponent(expenseId)}/reject`;
 
       await apiRequest(endpoint, {
         method: "POST",
-
         ...(action === "reject"
           ? {
-              headers: {
-                "Content-Type": "application/json",
-              },
               body: JSON.stringify({ reason }),
             }
           : {}),
@@ -1126,8 +1152,7 @@ function ExpenseApprovals({ user }) {
       await loadApprovals(true);
     } catch (err) {
       setError(
-        err?.message ||
-        `Unable to ${action} this expense.`
+        err?.message || `Unable to ${action} this expense.`
       );
     } finally {
       setProcessingId("");
@@ -1139,9 +1164,7 @@ function ExpenseApprovals({ user }) {
       <section className="dashboard-panel">
         <div className="dashboard-empty-state">
           <ShieldCheck size={30} />
-
           <h3>Admin access required</h3>
-
           <p>
             Only administrators can review and approve
             event expenses.
@@ -1161,12 +1184,8 @@ function ExpenseApprovals({ user }) {
     <div className="dashboard-approvals-page">
       <section className="dashboard-welcome">
         <div>
-          <p className="dashboard-eyebrow">
-            ADMINISTRATION
-          </p>
-
+          <p className="dashboard-eyebrow">ADMINISTRATION</p>
           <h2>Expense Approvals</h2>
-
           <p>
             Review pending event expenses and record
             approval decisions.
@@ -1194,13 +1213,8 @@ function ExpenseApprovals({ user }) {
       {error && (
         <div className="dashboard-alert" role="alert">
           <AlertCircle size={18} />
-
           <span>{error}</span>
-
-          <button
-            type="button"
-            onClick={() => setError("")}
-          >
+          <button type="button" onClick={() => setError("")}>
             Dismiss
           </button>
         </div>
@@ -1212,13 +1226,8 @@ function ExpenseApprovals({ user }) {
           role="status"
         >
           <CheckCircle2 size={18} />
-
           <span>{notice}</span>
-
-          <button
-            type="button"
-            onClick={() => setNotice("")}
-          >
+          <button type="button" onClick={() => setNotice("")}>
             Dismiss
           </button>
         </div>
@@ -1244,7 +1253,6 @@ function ExpenseApprovals({ user }) {
         <div className="dashboard-panel-heading">
           <div>
             <h2>Pending expense requests</h2>
-
             <p>
               Approve valid expenses or reject them
               with a reason.
@@ -1260,15 +1268,12 @@ function ExpenseApprovals({ user }) {
               size={24}
               className="dashboard-spinning"
             />
-
             <p>Loading pending expenses...</p>
           </div>
         ) : approvals.length === 0 ? (
           <div className="dashboard-empty-state">
             <CheckCircle2 size={30} />
-
             <h3>No pending approvals</h3>
-
             <p>
               All currently retrieved event expenses
               have been reviewed.
@@ -1278,9 +1283,7 @@ function ExpenseApprovals({ user }) {
           <div className="dashboard-approval-list">
             {approvals.map((expense, index) => {
               const expenseId = String(
-                expense.id ??
-                expense._id ??
-                index
+                expense.id ?? expense._id ?? index
               );
 
               const busy = processingId === expenseId;
@@ -1298,8 +1301,7 @@ function ExpenseApprovals({ user }) {
                         </span>
 
                         <h3>
-                          {expense.description ||
-                            "Unnamed expense"}
+                          {expense.description || "Unnamed expense"}
                         </h3>
                       </div>
 
@@ -1314,20 +1316,17 @@ function ExpenseApprovals({ user }) {
 
                       <span>
                         <Package size={14} />
-                        {expense.category ||
-                          "Uncategorized"}
+                        {expense.category || "Uncategorized"}
                       </span>
 
                       <span>
                         <CalendarDays size={14} />
-                        Expense date:{" "}
-                        {formatDate(expense.expense_date)}
+                        Expense date: {formatDate(expense.expense_date)}
                       </span>
 
                       <span>
                         <Clock3 size={14} />
-                        Event date:{" "}
-                        {formatDate(expense.event_date)}
+                        Event date: {formatDate(expense.event_date)}
                       </span>
                     </div>
 
@@ -1371,7 +1370,6 @@ function ExpenseApprovals({ user }) {
                       ) : (
                         <CheckCircle2 size={15} />
                       )}
-
                       Approve
                     </button>
 
@@ -1417,9 +1415,7 @@ function DashboardOverview({
     return events
       .filter((event) => {
         const date = getEventDate(event);
-        const status = String(
-          getStatus(event)
-        ).toLowerCase();
+        const status = String(getStatus(event)).toLowerCase();
 
         return (
           date &&
@@ -1429,8 +1425,7 @@ function DashboardOverview({
         );
       })
       .sort(
-        (a, b) =>
-          getEventDate(a) - getEventDate(b)
+        (a, b) => getEventDate(a) - getEventDate(b)
       );
   }, [events]);
 
@@ -1444,10 +1439,7 @@ function DashboardOverview({
 
       const number = Number(count);
 
-      return (
-        total +
-        (Number.isFinite(number) ? number : 0)
-      );
+      return total + (Number.isFinite(number) ? number : 0);
     }, 0);
   }, [events]);
 
@@ -1462,7 +1454,6 @@ function DashboardOverview({
     { label: "Budget", icon: Wallet },
     { label: "Vendors", icon: Building2 },
     { label: "Sponsorships", icon: Handshake },
-
     ...(isAdmin(user)
       ? [{ label: "Approvals", icon: ShieldCheck }]
       : []),
@@ -1503,13 +1494,8 @@ function DashboardOverview({
       {error && (
         <div className="dashboard-alert" role="alert">
           <AlertCircle size={18} />
-
           <span>{error}</span>
-
-          <button
-            type="button"
-            onClick={onRefresh}
-          >
+          <button type="button" onClick={onRefresh}>
             Retry
           </button>
         </div>
@@ -1529,9 +1515,7 @@ function DashboardOverview({
         >
           <RefreshCw
             size={16}
-            className={
-              loading ? "dashboard-spinning" : ""
-            }
+            className={loading ? "dashboard-spinning" : ""}
           />
           Refresh
         </button>
@@ -1557,9 +1541,7 @@ function DashboardOverview({
         <StatCard
           icon={CalendarPlus}
           label="Upcoming events"
-          value={
-            loading ? "…" : upcomingEvents.length
-          }
+          value={loading ? "…" : upcomingEvents.length}
           helper="Future non-cancelled events"
           onClick={() => onNavigate("Scheduling")}
         />
@@ -1597,9 +1579,7 @@ function DashboardOverview({
           ) : upcomingEvents.length === 0 ? (
             <div className="dashboard-empty-state">
               <CalendarDays size={28} />
-
               <h3>No upcoming events</h3>
-
               <p>
                 Events will appear here when the API
                 returns scheduled future events.
@@ -1618,53 +1598,40 @@ function DashboardOverview({
                 </thead>
 
                 <tbody>
-                  {upcomingEvents
-                    .slice(0, 6)
-                    .map((event, index) => (
-                      <tr
-                        key={
-                          event?.id ??
-                          event?.event_id ??
-                          event?._id ??
-                          `${getEventName(event)}-${index}`
-                        }
-                      >
-                        <td>
-                          <strong>
-                            {getEventName(event)}
-                          </strong>
+                  {upcomingEvents.slice(0, 6).map((event, index) => (
+                    <tr
+                      key={
+                        event?.id ??
+                        event?.event_id ??
+                        event?._id ??
+                        `${getEventName(event)}-${index}`
+                      }
+                    >
+                      <td>
+                        <strong>{getEventName(event)}</strong>
+                        <span className="dashboard-subtext">
+                          {event?.category ??
+                            event?.event_type ??
+                            ""}
+                        </span>
+                      </td>
 
-                          <span className="dashboard-subtext">
-                            {event?.category ??
-                              event?.event_type ??
-                              ""}
-                          </span>
-                        </td>
-
-                        <td>
-                          {formatDate(
-                            getEventDate(event)
+                      <td>
+                        {formatDate(getEventDate(event))}
+                        <span className="dashboard-subtext">
+                          {formatTime(
+                            event?.time ?? event?.start_time
                           )}
+                        </span>
+                      </td>
 
-                          <span className="dashboard-subtext">
-                            {formatTime(
-                              event?.time ??
-                              event?.start_time
-                            )}
-                          </span>
-                        </td>
+                      <td>{getVenueName(event, venues)}</td>
 
-                        <td>
-                          {getVenueName(event, venues)}
-                        </td>
-
-                        <td>
-                          <StatusBadge
-                            status={getStatus(event)}
-                          />
-                        </td>
-                      </tr>
-                    ))}
+                      <td>
+                        <StatusBadge status={getStatus(event)} />
+                      </td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>
@@ -1690,22 +1657,17 @@ function DashboardOverview({
 
           {nextEvent ? (
             <div className="dashboard-next-event">
-              <strong>
-                {getEventName(nextEvent)}
-              </strong>
+              <strong>{getEventName(nextEvent)}</strong>
 
               <p>
                 <CalendarDays size={16} />
-                {formatDate(
-                  getEventDate(nextEvent)
-                )}
+                {formatDate(getEventDate(nextEvent))}
               </p>
 
               <p>
                 <Clock3 size={16} />
                 {formatTime(
-                  nextEvent?.time ??
-                  nextEvent?.start_time
+                  nextEvent?.time ?? nextEvent?.start_time
                 )}
               </p>
 
@@ -1714,9 +1676,7 @@ function DashboardOverview({
                 {getVenueName(nextEvent, venues)}
               </p>
 
-              <StatusBadge
-                status={getStatus(nextEvent)}
-              />
+              <StatusBadge status={getStatus(nextEvent)} />
             </div>
           ) : (
             <p className="dashboard-empty-state">
@@ -1743,9 +1703,7 @@ function DashboardOverview({
                 onClick={() => onNavigate(label)}
               >
                 <Icon size={18} />
-
                 <strong>{label}</strong>
-
                 <ChevronRight size={17} />
               </button>
             ))}
@@ -1755,7 +1713,6 @@ function DashboardOverview({
 
       <footer className="dashboard-footer">
         <span>{new Date().getFullYear()}</span>
-
         <span>
           Dashboard values are calculated from API responses.
         </span>
@@ -1768,16 +1725,14 @@ function DashboardOverview({
    MAIN DASHBOARD
 ======================================================= */
 
-export default function Dashboard({
-  user: userProp,
-  onLogout,
-}) {
+export default function Dashboard({ user: userProp, onLogout }) {
   const [user, setUser] = useState(() => {
     if (userProp) return userProp;
 
     try {
-      return JSON.parse(
-        localStorage.getItem("user") || "null"
+      return (
+        JSON.parse(localStorage.getItem("user") || "null") ||
+        JSON.parse(sessionStorage.getItem("user") || "null")
       );
     } catch {
       return null;
@@ -1806,55 +1761,51 @@ export default function Dashboard({
     setLoading(true);
     setError("");
 
-    const [eventsResult, venuesResult] =
-      await Promise.allSettled([
-        getEvents(),
-        getVenues(),
-      ]);
+    try {
+      const [eventsResult, venuesResult] =
+        await Promise.allSettled([
+          getEvents(),
+          getVenues(),
+        ]);
 
-    if (eventsResult.status === "fulfilled") {
-      setEvents(
-        toArray(eventsResult.value, [
-          "events",
-          "items",
-        ])
-      );
-    } else {
-      setEvents([]);
+      if (eventsResult.status === "fulfilled") {
+        setEvents(
+          toArray(eventsResult.value, ["events", "items"])
+        );
+      } else {
+        setEvents([]);
+      }
+
+      if (venuesResult.status === "fulfilled") {
+        setVenues(
+          toArray(venuesResult.value, ["venues", "items"])
+        );
+      } else {
+        setVenues([]);
+      }
+
+      const errors = [];
+
+      if (eventsResult.status === "rejected") {
+        errors.push(
+          eventsResult.reason?.message || "Unable to load events."
+        );
+      }
+
+      if (venuesResult.status === "rejected") {
+        errors.push(
+          venuesResult.reason?.message || "Unable to load venues."
+        );
+      }
+
+      if (errors.length > 0) {
+        setError(errors.join(" "));
+      }
+    } catch (err) {
+      setError(err?.message || "Unable to load dashboard data.");
+    } finally {
+      setLoading(false);
     }
-
-    if (venuesResult.status === "fulfilled") {
-      setVenues(
-        toArray(venuesResult.value, [
-          "venues",
-          "items",
-        ])
-      );
-    } else {
-      setVenues([]);
-    }
-
-    const errors = [];
-
-    if (eventsResult.status === "rejected") {
-      errors.push(
-        eventsResult.reason?.message ||
-        "Unable to load events."
-      );
-    }
-
-    if (venuesResult.status === "rejected") {
-      errors.push(
-        venuesResult.reason?.message ||
-        "Unable to load venues."
-      );
-    }
-
-    if (errors.length > 0) {
-      setError(errors.join(" "));
-    }
-
-    setLoading(false);
   }, []);
 
   useEffect(() => {
@@ -1878,7 +1829,7 @@ export default function Dashboard({
     try {
       await logoutUser();
     } catch {
-      // Local credentials are cleared below regardless.
+      // Clear local credentials even if the API logout fails.
     } finally {
       localStorage.removeItem("token");
       localStorage.removeItem("user");
@@ -1930,9 +1881,7 @@ export default function Dashboard({
       break;
 
     case "Approvals":
-      pageContent = (
-        <ExpenseApprovals user={user} />
-      );
+      pageContent = <ExpenseApprovals user={user} />;
       break;
 
     default:

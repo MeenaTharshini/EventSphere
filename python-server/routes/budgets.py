@@ -408,7 +408,6 @@ def serialize_selected_item(
     )
 
     if item_type == "Venue":
-
         result["name"] = (
             result.get("name")
             or "Selected venue"
@@ -419,7 +418,6 @@ def serialize_selected_item(
         )
 
     elif item_type == "Resource":
-
         result["name"] = (
             result.get("name")
             or "Selected resource"
@@ -438,7 +436,6 @@ def serialize_selected_item(
         )
 
     elif item_type == "Vendor":
-
         result["name"] = (
             result.get("business_name")
             or result.get("name")
@@ -615,7 +612,6 @@ def serialize_event(
 # =========================================================
 
 def get_event_budget_amount(event: dict) -> float:
-
     try:
         amount = float(
             event.get("budget") or 0
@@ -718,7 +714,6 @@ def serialize_budget(
 # =========================================================
 
 def serialize_expense(expense: dict) -> dict:
-
     result = serialize_datetime_fields(expense)
 
     return {
@@ -825,7 +820,6 @@ def ensure_expense_fits_budget(
     new_amount: float,
     old_amount: float = 0,
 ):
-
     event_id = str(event["_id"])
 
     current_total = expense_total(
@@ -844,7 +838,6 @@ def ensure_expense_fits_budget(
     )
 
     if projected_total > allocated_budget:
-
         available = max(
             allocated_budget
             - current_total
@@ -866,7 +859,6 @@ def validate_linked_item(
     event: dict,
     data: ExpenseInput,
 ):
-
     if not data.linked_item_id:
         return
 
@@ -874,7 +866,6 @@ def validate_linked_item(
     item_id = data.linked_item_id
 
     if item_type == "Venue":
-
         selected_ids = [
             str(
                 event.get("venue_id")
@@ -886,7 +877,6 @@ def validate_linked_item(
         collection_name = "venues"
 
     elif item_type == "Resource":
-
         selected_ids = normalize_ids(
             event.get("resource_ids")
             or event.get("resourceIds")
@@ -895,7 +885,6 @@ def validate_linked_item(
         collection_name = "resources"
 
     elif item_type == "Vendor":
-
         selected_ids = normalize_ids(
             event.get("vendor_ids")
             or event.get("vendorIds")
@@ -955,7 +944,6 @@ def validate_no_duplicate_link(
     data: ExpenseInput,
     exclude_expense_id: Optional[ObjectId] = None,
 ):
-
     if not data.linked_item_id:
         return
 
@@ -989,7 +977,6 @@ def get_updated_budget_response(
     request: Request,
     event: dict,
 ) -> dict:
-
     return serialize_budget(
         event,
         expense_total(
@@ -1000,7 +987,7 @@ def get_updated_budget_response(
 
 
 # =========================================================
-# NOTIFICATION HELPER
+# NOTIFICATION HELPERS
 # =========================================================
 
 def notify_expense_requester(
@@ -1013,8 +1000,8 @@ def notify_expense_requester(
     """
     Notify the user who submitted the expense.
 
-    Uses the existing requested_by field from the
-    expenses collection.
+    Notification errors must never undo a successful
+    approval or rejection operation.
     """
 
     recipient_id = str(
@@ -1054,38 +1041,175 @@ def notify_expense_requester(
         )
 
         notification_type = "success"
+        status = "Approved"
+        dedupe_status = "approved"
 
     else:
+        reason = (
+            rejection_reason
+            or "No reason provided"
+        )
+
         title = "Expense rejected"
 
         message = (
             f"Your expense '{description}' "
             f"for {event_name} has been rejected. "
-            f"Reason: {rejection_reason or 'No reason provided'}"
+            f"Reason: {reason}"
         )
 
         notification_type = "error"
+        status = "Rejected"
+        dedupe_status = "rejected"
 
-    create_notification(
-        db=request.app.state.db,
-        recipient_id=recipient_id,
-        title=title,
-        message=message,
-        notification_type=notification_type,
-        category="expense",
-        related_id=str(expense["_id"]),
-        related_type="expense",
-        metadata={
-            "event_id": str(expense.get("event_id", "")),
-            "event_name": event_name,
-            "expense_description": description,
-            "amount": amount,
-            "status": "Approved" if approved else "Rejected",
-            "rejection_reason": (
-                rejection_reason if not approved else None
+    try:
+        create_notification(
+            db=request.app.state.db,
+            recipient_id=recipient_id,
+            title=title,
+            message=message,
+            notification_type=notification_type,
+            category="expense",
+            related_id=str(expense["_id"]),
+            related_type="expense",
+            metadata={
+                "event_id": str(
+                    expense.get("event_id", "")
+                ),
+                "event_name": event_name,
+                "expense_id": str(expense["_id"]),
+                "expense_description": description,
+                "amount": amount,
+                "status": status,
+                "rejection_reason": (
+                    rejection_reason if not approved else None
+                ),
+                "destination": "approvals",
+            },
+            dedupe_key=(
+                f"expense_{dedupe_status}:"
+                f"{expense['_id']}:{recipient_id}"
             ),
-        },
+        )
+
+    except Exception as exc:
+        print(
+            "Expense requester notification failed: "
+            f"{type(exc).__name__}: {exc}"
+        )
+
+
+def notify_admins_new_expense(
+    request: Request,
+    expense: dict,
+    event: dict,
+):
+    """
+    Notify every administrator when a new expense
+    is submitted for approval.
+
+    The dedupe key includes the admin ID so that
+    every administrator receives their own notification.
+    """
+
+    db = request.app.state.db
+
+    event_name = (
+        event.get("name")
+        or event.get("title")
+        or event.get("event_name")
+        or "Untitled event"
     )
+
+    description = (
+        expense.get("description")
+        or "Expense"
+    )
+
+    amount = safe_float(
+        expense.get("amount")
+    )
+
+    expense_id = str(expense.get("_id") or "")
+
+    if not expense_id:
+        print(
+            "Admin notification skipped: "
+            "expense ID is missing."
+        )
+        return
+
+    try:
+        admins = db["users"].find(
+            {
+                "role": {
+                    "$in": [
+                        "Admin",
+                        "admin",
+                        "Administrator",
+                        "administrator",
+                    ]
+                }
+            },
+            {
+                "_id": 1,
+                "name": 1,
+                "email": 1,
+            },
+        )
+
+        for admin in admins:
+            admin_id = str(
+                admin.get("_id") or ""
+            ).strip()
+
+            if not admin_id:
+                continue
+
+            try:
+                create_notification(
+                    db=db,
+                    recipient_id=admin_id,
+                    title="New expense requires approval",
+                    message=(
+                        f"{description} for {event_name} "
+                        f"requires your approval. "
+                        f"Amount: ₹{amount:,.2f}."
+                    ),
+                    notification_type="info",
+                    category="expense",
+                    related_id=expense_id,
+                    related_type="expense",
+                    metadata={
+                        "event_id": str(
+                            expense.get("event_id", "")
+                        ),
+                        "event_name": event_name,
+                        "expense_id": expense_id,
+                        "expense_description": description,
+                        "amount": amount,
+                        "status": "Pending",
+                        "destination": "approvals",
+                    },
+                    dedupe_key=(
+                        f"expense_submitted:"
+                        f"{expense_id}:{admin_id}"
+                    ),
+                )
+
+            except Exception as exc:
+                print(
+                    "Admin expense notification failed. "
+                    f"Admin ID: {admin_id}; "
+                    f"Error: {type(exc).__name__}: {exc}"
+                )
+
+    except Exception as exc:
+        print(
+            "Unable to retrieve administrators for "
+            "expense notification: "
+            f"{type(exc).__name__}: {exc}"
+        )
 
 
 # =========================================================
@@ -1094,7 +1218,6 @@ def notify_expense_requester(
 
 @router.get("/categories")
 def get_expense_categories():
-
     return {
         "success": True,
         "categories": EXPENSE_CATEGORIES,
@@ -1111,7 +1234,6 @@ def get_event_budget(
     request: Request,
     user: dict = Depends(get_current_user),
 ):
-
     event = get_event(
         request,
         event_id,
@@ -1169,7 +1291,6 @@ def assign_event_budget(
     request: Request,
     user: dict = Depends(get_current_user),
 ):
-
     require_manager(user)
 
     event = get_event(
@@ -1232,7 +1353,6 @@ def add_expense(
     request: Request,
     user: dict = Depends(get_current_user),
 ):
-
     require_manager(user)
 
     event = get_event(
@@ -1299,6 +1419,19 @@ def add_expense(
         {"_id": result.inserted_id}
     )
 
+    if not created_expense:
+        raise HTTPException(
+            status_code=500,
+            detail="Expense was saved but could not be retrieved.",
+        )
+
+    # Notify administrators about the new pending expense.
+    notify_admins_new_expense(
+        request=request,
+        expense=created_expense,
+        event=event,
+    )
+
     return {
         "success": True,
         "message": "Expense submitted for approval.",
@@ -1321,7 +1454,6 @@ def update_expense(
     request: Request,
     user: dict = Depends(get_current_user),
 ):
-
     require_manager(user)
 
     existing = get_expense(
@@ -1422,7 +1554,6 @@ def approve_expense(
     request: Request,
     user: dict = Depends(get_current_user),
 ):
-
     require_admin(user)
 
     existing = get_expense(
@@ -1467,7 +1598,13 @@ def approve_expense(
         {"_id": existing["_id"]}
     )
 
-    # Send notification to the original requester.
+    if not updated:
+        raise HTTPException(
+            status_code=500,
+            detail="Expense approval could not be retrieved.",
+        )
+
+    # Notify the original requester.
     notify_expense_requester(
         request=request,
         expense=updated,
@@ -1497,7 +1634,6 @@ def reject_expense(
     request: Request,
     user: dict = Depends(get_current_user),
 ):
-
     require_admin(user)
 
     existing = get_expense(
@@ -1542,7 +1678,13 @@ def reject_expense(
         {"_id": existing["_id"]}
     )
 
-    # Send rejection notification with the admin's reason.
+    if not updated:
+        raise HTTPException(
+            status_code=500,
+            detail="Expense rejection could not be retrieved.",
+        )
+
+    # Notify requester with the administrator's rejection reason.
     notify_expense_requester(
         request=request,
         expense=updated,
@@ -1572,7 +1714,6 @@ def delete_expense(
     request: Request,
     user: dict = Depends(get_current_user),
 ):
-
     require_manager(user)
 
     existing = get_expense(
@@ -1644,6 +1785,12 @@ def get_expense_approvals(
     expenses_collection = get_expenses_collection(request)
     events_collection = get_events_collection(request)
 
+    # Total number of pending approvals, independent of
+    # how many expenses are returned in the response.
+    pending_count = expenses_collection.count_documents({
+        "status": "Pending"
+    })
+
     expenses = expenses_collection.find(
         {}
     ).sort(
@@ -1656,7 +1803,9 @@ def get_expense_approvals(
     for expense in expenses:
         item = serialize_expense(expense)
 
-        event_id = str(expense.get("event_id", ""))
+        event_id = str(
+            expense.get("event_id", "")
+        )
 
         event = None
 
@@ -1685,6 +1834,7 @@ def get_expense_approvals(
                 or event.get("date")
                 or ""
             )
+
         else:
             item["event_name"] = "Unknown event"
             item["event_date"] = ""
@@ -1695,4 +1845,5 @@ def get_expense_approvals(
         "success": True,
         "expenses": result,
         "count": len(result),
+        "pending_count": pending_count,
     }

@@ -810,24 +810,18 @@ export default function Budget() {
     }
 
     const payload = {
-      description,
-      category: expenseForm.category,
-      amount,
-      expense_date: expenseDate,
-
-      // New expenses always enter the approval workflow as Pending.
-      // Existing status is preserved by the backend update endpoint.
-      status: "Pending",
-
-      notes: expenseForm.notes.trim(),
-
-      linked_item_type: expenseForm.linked_item_id
-        ? expenseForm.linked_item_type
-        : null,
-
-      linked_item_id: expenseForm.linked_item_id || null,
-      linked_item_name: expenseForm.linked_item_name || null,
-    };
+  description,
+  category: expenseForm.category,
+  amount,
+  expense_date: expenseDate,
+  ...(isEditing ? {} : { status: "Pending" }),
+  notes: expenseForm.notes.trim(),
+  linked_item_type: expenseForm.linked_item_id
+    ? expenseForm.linked_item_type
+    : null,
+  linked_item_id: expenseForm.linked_item_id || null,
+  linked_item_name: expenseForm.linked_item_name || null,
+};
 
     setSavingExpense(true);
     setError("");

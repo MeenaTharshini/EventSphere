@@ -11,6 +11,7 @@ from .auth import get_current_user
 from .tickets import create_ticket_for_registration
 from .notifications import create_notification
 
+
 router = APIRouter(
     prefix="/api/attendees",
     tags=["Attendee Registration"],
@@ -111,7 +112,7 @@ class AttendeeRegistration(BaseModel):
 
 
 # ---------------------------------------------------------
-# HELPERS
+# COMMON HELPERS
 # ---------------------------------------------------------
 
 def require_attendee(user: dict) -> None:
@@ -127,6 +128,14 @@ def require_attendee(user: dict) -> None:
         )
 
 
+def get_user_id(user: dict) -> str:
+    return str(
+        user.get("_id")
+        or user.get("id")
+        or ""
+    ).strip()
+
+
 def get_event_name(event: dict) -> str:
     return str(
         event.get("name")
@@ -135,204 +144,6 @@ def get_event_name(event: dict) -> str:
         or "Event"
     )
 
-
-# ---------------------------------------------------------
-# GET ALL ATTENDEES FOR A SPECIFIC EVENT
-# GET /api/attendees/event/{event_id}
-# ---------------------------------------------------------
-
-@router.get("/event/{event_id}")
-def get_event_attendees(
-    event_id: str,
-    request: Request,
-    current_user: dict = Depends(get_current_user),
-):
-    """
-    Retrieve all active registrations for an event.
-
-    Organizer:
-        Can view attendees for their own events.
-
-    Admin:
-        Can view attendees for any event.
-
-    Returns registration details and associated digital tickets.
-    """
-
-    # -----------------------------------------------------
-    # 1. DATABASE CONNECTION
-    # -----------------------------------------------------
-
-    db = request.app.state.db
-
-    attendees_collection = db["attendees"]
-    events_collection = db["events"]
-    tickets_collection = db["tickets"]
-
-    # -----------------------------------------------------
-    # 2. VALIDATE EVENT ID
-    # -----------------------------------------------------
-
-    if not ObjectId.is_valid(event_id):
-        raise HTTPException(
-            status_code=400,
-            detail="Invalid event ID.",
-        )
-
-    event_oid = ObjectId(event_id)
-
-    # -----------------------------------------------------
-    # 3. FETCH EVENT
-    # -----------------------------------------------------
-
-    try:
-        event = events_collection.find_one({
-            "_id": event_oid
-        })
-
-    except PyMongoError:
-        raise HTTPException(
-            status_code=503,
-            detail="Unable to retrieve event details.",
-        )
-
-    if not event:
-        raise HTTPException(
-            status_code=404,
-            detail="Event not found.",
-        )
-
-    # -----------------------------------------------------
-    # 4. AUTHORIZATION
-    # -----------------------------------------------------
-
-    role = str(
-        current_user.get("role", "")
-    ).strip().lower()
-
-    if role not in {"admin", "organizer"}:
-        raise HTTPException(
-            status_code=403,
-            detail="Only organizers and admins can view event attendees.",
-        )
-
-    if role == "organizer":
-
-        current_user_id = str(
-            current_user.get("_id")
-            or current_user.get("id")
-            or ""
-        )
-
-        event_owner_id = str(
-            event.get("organizer_id") or ""
-        )
-
-        if not current_user_id or event_owner_id != current_user_id:
-            raise HTTPException(
-                status_code=403,
-                detail="You can only view attendees for your own events.",
-            )
-
-    # -----------------------------------------------------
-    # 5. FETCH ACTIVE REGISTRATIONS
-    # -----------------------------------------------------
-
-    try:
-        attendee_records = list(
-            attendees_collection.find({
-                "event_id": event_id,
-                "status": {"$nin": ["Cancelled", "Canceled"]},
-            }).sort("registered_at", -1)
-        )
-
-    except PyMongoError:
-        raise HTTPException(
-            status_code=503,
-            detail="Unable to retrieve event attendees.",
-        )
-
-    # -----------------------------------------------------
-    # 6. FETCH ASSOCIATED TICKETS
-    # -----------------------------------------------------
-
-    results = []
-
-    for attendee in attendee_records:
-
-        registration_id = str(
-            attendee.get("_id", "")
-        )
-
-        try:
-            ticket = tickets_collection.find_one({
-                "registration_id": registration_id
-            })
-
-        except PyMongoError:
-            raise HTTPException(
-                status_code=503,
-                detail="Unable to retrieve attendee ticket details.",
-            )
-
-        # -------------------------------------------------
-        # 7. BUILD ATTENDEE RESPONSE
-        # -------------------------------------------------
-
-        ticket_data = None
-
-        if ticket:
-
-            ticket_data = {
-                "ticket_id": ticket.get("ticket_id", ""),
-                "status": ticket.get("status", "Valid"),
-                "qr_code": ticket.get("qr_code", ""),
-                "checked_in_at": serialize_datetime(
-                    ticket.get("checked_in_at")
-                ),
-                "created_at": serialize_datetime(
-                    ticket.get("created_at")
-                ),
-            }
-
-        results.append({
-            "attendee_id": registration_id,
-            "registration_id": registration_id,
-            "name": attendee.get("name", ""),
-            "email": attendee.get("email", ""),
-            "phone": attendee.get("phone", ""),
-            "category": attendee.get("category", "General"),
-            "registration_status": attendee.get(
-                "status", "Registered"
-            ),
-            "registered_at": serialize_datetime(
-                attendee.get("registered_at")
-            ),
-            "ticket": ticket_data,
-        })
-
-    # -----------------------------------------------------
-    # 8. RETURN RESPONSE
-    # -----------------------------------------------------
-
-    return {
-        "success": True,
-
-        "event": {
-            "id": event_id,
-            "name": get_event_name(event),
-            "date": serialize_datetime(
-                get_event_date(event)
-            ),
-            "end_date": event.get("end_date") or event.get("event_date") or event.get("date") or "",
-            "start_time": event.get("start_time") or "",
-            "end_time": event.get("end_time") or "",
-            "venue": get_event_venue(event),
-        },
-
-        "attendees": results,
-        "count": len(results),
-    }
 
 def serialize_datetime(value) -> str | None:
     if value is None:
@@ -385,6 +196,51 @@ def get_event_venue(event: dict) -> str:
     return str(value)
 
 
+def send_attendee_notification(
+    db,
+    recipient_id: str,
+    title: str,
+    message: str,
+    notification_type: str,
+    category: str,
+    related_id: str,
+    related_type: str,
+    metadata: dict | None = None,
+) -> None:
+    """
+    Send a notification without interrupting the main operation.
+
+    A notification failure must not undo a successful registration
+    or cancellation.
+    """
+
+    if not recipient_id:
+        print(
+            "Notification skipped: recipient ID is missing."
+        )
+        return
+
+    try:
+        create_notification(
+            db=db,
+            recipient_id=recipient_id,
+            title=title,
+            message=message,
+            notification_type=notification_type,
+            category=category,
+            related_id=related_id,
+            related_type=related_type,
+            metadata=metadata or {},
+        )
+
+    except Exception as exc:
+        print(
+            "Attendee notification failed. "
+            f"Recipient: {recipient_id}; "
+            f"Error: {type(exc).__name__}: {exc}"
+        )
+
+
 def parse_event_datetime(value) -> datetime | None:
     """
     Convert MongoDB datetime or ISO datetime strings
@@ -421,23 +277,18 @@ def parse_event_datetime(value) -> datetime | None:
     return parsed
 
 
+
 def is_event_over(event: dict) -> bool:
     """
-    Determine whether the event has ended.
+    Determine whether an event has ended using the Events API fields.
 
-    Supported:
-    - end_datetime
-    - end_date + end_time
-    - event_date + end_time
-    - date + end_time
-    - Date-only event values
-
-    Separate event date/time values are interpreted in IST.
+    The event's ending date is end_date, falling back to event_date/date.
+    Separate date and time values are interpreted in IST.
     """
 
     now = datetime.now(IST)
 
-    # 1. Prefer a complete end_datetime.
+    # Prefer an explicitly stored end_datetime.
     end_datetime = event.get("end_datetime")
 
     if end_datetime:
@@ -446,19 +297,17 @@ def is_event_over(event: dict) -> bool:
         if parsed:
             return parsed <= datetime.now(timezone.utc)
 
-    # 2. Find the event's ending date.
+    # Use the event's ending date.
     date_value = (
         event.get("end_date")
         or event.get("event_date")
         or event.get("date")
-        or event.get("start_date")
-        or event.get("start_datetime")
     )
 
     if not date_value:
         return False
 
-    # 3. Handle MongoDB datetime values.
+    # Handle datetime values.
     if isinstance(date_value, datetime):
         parsed = parse_event_datetime(date_value)
 
@@ -471,8 +320,8 @@ def is_event_over(event: dict) -> bool:
         if not date_text:
             return False
 
-        # Preserve a complete ISO datetime.
-        if "T" in date_text or " " in date_text:
+        # Handle a complete ISO datetime.
+        if "T" in date_text:
             parsed = parse_event_datetime(date_text)
 
             if parsed:
@@ -482,26 +331,25 @@ def is_event_over(event: dict) -> bool:
             event_date = datetime.fromisoformat(
                 date_text[:10]
             ).date()
-
         except ValueError:
             return False
 
-        # 4. Combine date with end_time.
-        end_time_value = event.get("end_time")
+        # Match the default end time used by routes/events.py.
+        end_time_value = event.get("end_time") or "16:00"
 
-        if end_time_value:
+        try:
+            end_time = datetime.strptime(
+                str(end_time_value).strip(),
+                "%H:%M"
+            ).time()
+        except ValueError:
             try:
                 end_time = datetime.strptime(
                     str(end_time_value).strip(),
-                    "%H:%M",
+                    "%H:%M:%S"
                 ).time()
-
             except ValueError:
                 return False
-
-        else:
-            # Date-only events end at midnight after that date.
-            end_time = datetime.max.time()
 
         event_end = datetime.combine(
             event_date,
@@ -511,11 +359,12 @@ def is_event_over(event: dict) -> bool:
 
         return event_end <= now
 
-    # A MongoDB datetime was supplied directly.
     return parsed <= datetime.now(timezone.utc)
 
 
-def get_registration_event_id(registration: dict) -> ObjectId | None:
+def get_registration_event_id(
+    registration: dict,
+) -> ObjectId | None:
     stored_event_id = registration.get("event_id")
 
     if isinstance(stored_event_id, ObjectId):
@@ -528,6 +377,172 @@ def get_registration_event_id(registration: dict) -> ObjectId | None:
         return ObjectId(stored_event_id)
 
     return None
+
+
+# ---------------------------------------------------------
+# GET ALL ATTENDEES FOR A SPECIFIC EVENT
+# GET /api/attendees/event/{event_id}
+# ---------------------------------------------------------
+
+@router.get("/event/{event_id}")
+def get_event_attendees(
+    event_id: str,
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Organizer:
+        Can view attendees for their own events.
+
+    Admin:
+        Can view attendees for any event.
+    """
+
+    db = request.app.state.db
+
+    attendees_collection = db["attendees"]
+    events_collection = db["events"]
+    tickets_collection = db["tickets"]
+
+    # Validate event ID.
+    if not ObjectId.is_valid(event_id):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid event ID.",
+        )
+
+    event_oid = ObjectId(event_id)
+
+    # Fetch event.
+    try:
+        event = events_collection.find_one({
+            "_id": event_oid
+        })
+
+    except PyMongoError:
+        raise HTTPException(
+            status_code=503,
+            detail="Unable to retrieve event details.",
+        )
+
+    if not event:
+        raise HTTPException(
+            status_code=404,
+            detail="Event not found.",
+        )
+
+    # Authorization.
+    role = str(
+        current_user.get("role", "")
+    ).strip().lower()
+
+    if role not in {"admin", "organizer"}:
+        raise HTTPException(
+            status_code=403,
+            detail="Only organizers and admins can view event attendees.",
+        )
+
+    if role == "organizer":
+        current_user_id = get_user_id(current_user)
+
+        event_owner_id = str(
+            event.get("organizer_id") or ""
+        )
+
+        if not current_user_id or event_owner_id != current_user_id:
+            raise HTTPException(
+                status_code=403,
+                detail="You can only view attendees for your own events.",
+            )
+
+    # Fetch active registrations.
+    try:
+        attendee_records = list(
+            attendees_collection.find({
+                "event_id": event_id,
+                "status": {
+                    "$nin": ["Cancelled", "Canceled"]
+                },
+            }).sort("registered_at", -1)
+        )
+
+    except PyMongoError:
+        raise HTTPException(
+            status_code=503,
+            detail="Unable to retrieve event attendees.",
+        )
+
+    # Fetch associated tickets.
+    results = []
+
+    for attendee in attendee_records:
+        registration_id = str(
+            attendee.get("_id", "")
+        )
+
+        try:
+            ticket = tickets_collection.find_one({
+                "registration_id": registration_id
+            })
+
+        except PyMongoError:
+            raise HTTPException(
+                status_code=503,
+                detail="Unable to retrieve attendee ticket details.",
+            )
+
+        ticket_data = None
+
+        if ticket:
+            ticket_data = {
+                "ticket_id": ticket.get("ticket_id", ""),
+                "status": ticket.get("status", "Valid"),
+                "qr_code": ticket.get("qr_code", ""),
+                "checked_in_at": serialize_datetime(
+                    ticket.get("checked_in_at")
+                ),
+                "created_at": serialize_datetime(
+                    ticket.get("created_at")
+                ),
+            }
+
+        results.append({
+            "attendee_id": registration_id,
+            "registration_id": registration_id,
+            "name": attendee.get("name", ""),
+            "email": attendee.get("email", ""),
+            "phone": attendee.get("phone", ""),
+            "category": attendee.get("category", "General"),
+            "registration_status": attendee.get(
+                "status", "Registered"
+            ),
+            "registered_at": serialize_datetime(
+                attendee.get("registered_at")
+            ),
+            "ticket": ticket_data,
+        })
+
+    return {
+        "success": True,
+        "event": {
+            "id": event_id,
+            "name": get_event_name(event),
+            "date": serialize_datetime(
+                get_event_date(event)
+            ),
+            "end_date": (
+                event.get("end_date")
+                or event.get("event_date")
+                or event.get("date")
+                or ""
+            ),
+            "start_time": event.get("start_time") or "",
+            "end_time": event.get("end_time") or "",
+            "venue": get_event_venue(event),
+        },
+        "attendees": results,
+        "count": len(results),
+    }
 
 
 # ---------------------------------------------------------
@@ -572,10 +587,7 @@ def register_attendee(
 
     event_oid = ObjectId(data.event_id)
 
-    # -----------------------------------------------------
-    # FIND EVENT
-    # -----------------------------------------------------
-
+    # Find event.
     try:
         event = events.find_one({
             "_id": event_oid,
@@ -593,10 +605,7 @@ def register_attendee(
             detail="The selected event does not exist.",
         )
 
-    # -----------------------------------------------------
-    # CHECK EVENT STATUS
-    # -----------------------------------------------------
-
+    # Check event status.
     event_status = str(
         event.get("status", "")
     ).strip().lower()
@@ -612,49 +621,8 @@ def register_attendee(
             status_code=409,
             detail="This event has already ended. Registration is closed.",
         )
-        # -----------------------------------------------------
-    # NOTIFY ATTENDEE ABOUT SUCCESSFUL REGISTRATION
-    # -----------------------------------------------------
 
-    create_notification(
-        db=db,
-        recipient_id=str(current_user["_id"]),
-        title="Registration successful",
-        message=(
-            f"You are registered for "
-            f"{attendee['event_name']}."
-        ),
-        notification_type="success",
-        category="registration",
-        related_id=str(registration_id),
-        related_type="attendee_registration",
-        metadata={
-            "event_id": str(event_oid),
-            "event_name": attendee["event_name"],
-        },
-    )
-        # -----------------------------------------------------
-    # NOTIFY ATTENDEE ABOUT CANCELLATION
-    # -----------------------------------------------------
-
-    create_notification(
-        db=db,
-        recipient_id=str(current_user["_id"]),
-        title="Registration cancelled",
-        message=(
-            f"Your registration for "
-            f"{registration.get('event_name', 'the event')} "
-            f"has been cancelled."
-        ),
-        notification_type="warning",
-        category="registration",
-        related_id=registration_id,
-        related_type="attendee_registration",
-    )
-    # -----------------------------------------------------
-    # PREVENT DUPLICATE REGISTRATIONS
-    # -----------------------------------------------------
-
+    # Prevent duplicate registrations.
     try:
         attendees.create_index(
             [("event_id", 1), ("email", 1)],
@@ -673,10 +641,7 @@ def register_attendee(
             detail="Registration service is temporarily unavailable.",
         )
 
-    # -----------------------------------------------------
-    # PREPARE ATTENDEE DATA
-    # -----------------------------------------------------
-
+    # Prepare attendee data.
     attendee = {
         "name": str(
             current_user.get("name") or data.name
@@ -690,19 +655,14 @@ def register_attendee(
         "registered_at": datetime.now(timezone.utc),
     }
 
-    # -----------------------------------------------------
-    # REACTIVATE OR CREATE REGISTRATION
-    # -----------------------------------------------------
-
+    # Reactivate or create registration.
     existing_ticket = None
 
     if existing_registration:
-
         existing_status = str(
             existing_registration.get("status", "")
         ).strip().lower()
 
-        # Prevent another active registration.
         if existing_status != "cancelled":
             raise HTTPException(
                 status_code=409,
@@ -711,7 +671,7 @@ def register_attendee(
 
         registration_id = existing_registration["_id"]
 
-        # Retrieve the existing digital ticket.
+        # Retrieve existing ticket.
         try:
             existing_ticket = tickets.find_one({
                 "registration_id": str(registration_id),
@@ -724,10 +684,12 @@ def register_attendee(
             )
 
         # Do not reactivate a ticket already used for check-in.
-        if existing_ticket and str(
-            existing_ticket.get("status", "")
-        ).strip().lower() == "used":
-
+        if (
+            existing_ticket
+            and str(
+                existing_ticket.get("status", "")
+            ).strip().lower() == "used"
+        ):
             raise HTTPException(
                 status_code=409,
                 detail=(
@@ -736,7 +698,7 @@ def register_attendee(
                 ),
             )
 
-        # Reactivate the existing attendee document.
+        # Reactivate existing attendee document.
         try:
             result = attendees.update_one(
                 {
@@ -770,8 +732,7 @@ def register_attendee(
             )
 
     else:
-
-        # Create a new attendee document.
+        # Create new attendee document.
         try:
             result = attendees.insert_one(attendee)
             registration_id = result.inserted_id
@@ -788,10 +749,7 @@ def register_attendee(
                 detail="Could not save your registration. Please try again.",
             )
 
-    # -----------------------------------------------------
-    # UPDATE EVENT ATTENDEE COUNT
-    # -----------------------------------------------------
-
+    # Update event attendee count.
     try:
         events.update_one(
             {
@@ -810,19 +768,14 @@ def register_attendee(
             f"{type(exc).__name__}: {exc}"
         )
 
-    # -----------------------------------------------------
-    # GENERATE OR REACTIVATE DIGITAL TICKET
-    # -----------------------------------------------------
-
+    # Generate or reactivate digital ticket.
     ticket = None
     ticket_error = None
 
     try:
-
         if existing_ticket:
-
-            # Reactivate the SAME ticket.
-            tickets.update_one(
+            # Reactivate the same ticket.
+            ticket_update = tickets.update_one(
                 {
                     "_id": existing_ticket["_id"],
                     "registration_id": str(registration_id),
@@ -838,14 +791,22 @@ def register_attendee(
                 },
             )
 
-            # Retrieve the updated ticket.
+            if ticket_update.matched_count != 1:
+                raise RuntimeError(
+                    "Existing ticket could not be reactivated."
+                )
+
             ticket = tickets.find_one({
                 "_id": existing_ticket["_id"],
                 "registration_id": str(registration_id),
             })
 
-        else:
+            if not ticket:
+                raise RuntimeError(
+                    "Reactivated ticket could not be retrieved."
+                )
 
+        else:
             # Generate a ticket only when one does not exist.
             ticket = create_ticket_for_registration(
                 db=db,
@@ -855,7 +816,6 @@ def register_attendee(
             )
 
     except Exception as exc:
-
         ticket_error = type(exc).__name__
 
         print(
@@ -864,10 +824,7 @@ def register_attendee(
             f"Error: {type(exc).__name__}: {exc}"
         )
 
-    # -----------------------------------------------------
-    # RESPONSE
-    # -----------------------------------------------------
-
+    # Build response.
     response = {
         "success": True,
         "message": "Registration completed successfully!",
@@ -881,7 +838,6 @@ def register_attendee(
     }
 
     if ticket:
-
         response["ticket"] = {
             "ticket_id": ticket.get("ticket_id"),
             "status": ticket.get("status", "Valid"),
@@ -893,13 +849,37 @@ def register_attendee(
         )
 
     else:
-
         response["ticket_error"] = ticket_error
 
         response["message"] = (
             "Registration completed, but ticket generation failed. "
             "Please contact the event organizer."
         )
+
+    # -----------------------------------------------------
+    # NOTIFY ATTENDEE ABOUT SUCCESSFUL REGISTRATION
+    # This is deliberately AFTER registration and ticket
+    # processing, not inside the event-over condition.
+    # -----------------------------------------------------
+
+    send_attendee_notification(
+        db=db,
+        recipient_id=get_user_id(current_user),
+        title="Registration successful",
+        message=(
+            f"You are registered for "
+            f"{attendee['event_name']}."
+        ),
+        notification_type="success",
+        category="registration",
+        related_id=str(registration_id),
+        related_type="attendee_registration",
+        metadata={
+            "event_id": str(event_oid),
+            "event_name": attendee["event_name"],
+            "ticket_created": ticket is not None,
+        },
+    )
 
     return response
 
@@ -933,11 +913,9 @@ def get_my_registrations(
 
     try:
         registrations = list(
-            attendees.find(
-                {
-                    "email": account_email,
-                }
-            ).sort("registered_at", -1)
+            attendees.find({
+                "email": account_email,
+            }).sort("registered_at", -1)
         )
 
     except PyMongoError:
@@ -949,7 +927,6 @@ def get_my_registrations(
     results = []
 
     for registration in registrations:
-
         event_oid = get_registration_event_id(registration)
         event = None
 
@@ -1004,7 +981,6 @@ def get_my_registrations(
                 detail="Unable to retrieve ticket details.",
             )
 
-        # Append registration details.
         results.append({
             "id": str(registration["_id"]),
             "attendee_id": str(registration["_id"]),
@@ -1066,10 +1042,7 @@ def unregister_attendee(
 
     registration_oid = ObjectId(registration_id)
 
-    # -----------------------------------------------------
-    # VERIFY REGISTRATION OWNERSHIP
-    # -----------------------------------------------------
-
+    # Verify registration ownership.
     try:
         registration = attendees.find_one({
             "_id": registration_oid,
@@ -1091,16 +1064,12 @@ def unregister_attendee(
     if str(
         registration.get("status", "")
     ).strip().lower() == "cancelled":
-
         raise HTTPException(
             status_code=409,
             detail="This registration has already been cancelled.",
         )
 
-    # -----------------------------------------------------
-    # MARK REGISTRATION AS CANCELLED
-    # -----------------------------------------------------
-
+    # Mark registration as cancelled.
     try:
         result = attendees.update_one(
             {
@@ -1159,6 +1128,34 @@ def unregister_attendee(
             status_code=503,
             detail="Unable to cancel your registration. Please try again.",
         )
+
+    # -----------------------------------------------------
+    # NOTIFY ATTENDEE ABOUT CANCELLATION
+    # This is deliberately AFTER the cancellation succeeds.
+    # -----------------------------------------------------
+
+    send_attendee_notification(
+        db=db,
+        recipient_id=get_user_id(current_user),
+        title="Registration cancelled",
+        message=(
+            f"Your registration for "
+            f"{registration.get('event_name', 'the event')} "
+            f"has been cancelled."
+        ),
+        notification_type="warning",
+        category="registration",
+        related_id=str(registration_oid),
+        related_type="attendee_registration",
+        metadata={
+            "event_id": str(
+                registration.get("event_id") or ""
+            ),
+            "event_name": registration.get(
+                "event_name", "Event"
+            ),
+        },
+    )
 
     return {
         "success": True,

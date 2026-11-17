@@ -1,20 +1,17 @@
+
 # python-server/routes/vendors.py
 
 import re
-from datetime import date, datetime, timezone
-from typing import Literal
+from datetime import datetime, timezone
+from typing import Literal, Optional
 
 from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from pydantic import (
-    BaseModel,
-    ConfigDict,
-    Field,
-    field_validator,
-)
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pymongo.errors import DuplicateKeyError, PyMongoError
 
 from routes.auth import get_current_user
+from .notifications import create_notification
 
 
 router = APIRouter(
@@ -43,19 +40,18 @@ VENDOR_CATEGORIES = {
 
 VENDOR_STATUSES = {"Pending", "Approved", "Rejected"}
 
+ADMIN_ROLES = {
+    "admin",
+    "administrator",
+    "organizer",
+}
+
 
 # ---------------------------------------------------------
 # REQUEST MODELS
 # ---------------------------------------------------------
 
 class VendorProfileCreate(BaseModel):
-    """
-    Request body used when a Vendor creates their profile.
-
-    Approval status is intentionally not accepted from the client.
-    New vendor profiles always start as Pending.
-    """
-
     model_config = ConfigDict(
         str_strip_whitespace=True,
         extra="forbid",
@@ -73,10 +69,7 @@ class VendorProfileCreate(BaseModel):
     country: str = Field(default="", max_length=100)
     address: str = Field(default="", max_length=300)
 
-    services: list[str] = Field(
-        default_factory=list,
-        max_length=30,
-    )
+    services: list[str] = Field(default_factory=list, max_length=30)
 
     price_from: float | None = Field(
         default=None,
@@ -146,9 +139,7 @@ class VendorProfileCreate(BaseModel):
 
         for service in value:
             if not isinstance(service, str):
-                raise ValueError(
-                    "Every service must be a text value."
-                )
+                raise ValueError("Every service must be a text value.")
 
             service = service.strip()
 
@@ -178,13 +169,6 @@ class VendorProfileCreate(BaseModel):
 
 
 class VendorProfileUpdate(BaseModel):
-    """
-    Request body for updating an existing vendor profile.
-
-    Fields are optional so the vendor can update only selected fields.
-    Approval status and user_id cannot be changed here.
-    """
-
     model_config = ConfigDict(
         str_strip_whitespace=True,
         extra="forbid",
@@ -195,78 +179,42 @@ class VendorProfileUpdate(BaseModel):
         min_length=2,
         max_length=150,
     )
-
     category: str | None = Field(
         default=None,
         min_length=1,
         max_length=50,
     )
-
     contact_person: str | None = Field(
         default=None,
         min_length=2,
         max_length=100,
     )
-
     email: str | None = Field(
         default=None,
         min_length=5,
         max_length=254,
     )
-
     phone: str | None = Field(
         default=None,
         min_length=7,
         max_length=20,
     )
-
-    description: str | None = Field(
-        default=None,
-        max_length=2000,
-    )
-
-    city: str | None = Field(
-        default=None,
-        max_length=100,
-    )
-
-    state: str | None = Field(
-        default=None,
-        max_length=100,
-    )
-
-    country: str | None = Field(
-        default=None,
-        max_length=100,
-    )
-
-    address: str | None = Field(
-        default=None,
-        max_length=300,
-    )
-
-    services: list[str] | None = Field(
-        default=None,
-        max_length=30,
-    )
-
+    description: str | None = Field(default=None, max_length=2000)
+    city: str | None = Field(default=None, max_length=100)
+    state: str | None = Field(default=None, max_length=100)
+    country: str | None = Field(default=None, max_length=100)
+    address: str | None = Field(default=None, max_length=300)
+    services: list[str] | None = Field(default=None, max_length=30)
     price_from: float | None = Field(
         default=None,
         ge=0,
         allow_inf_nan=False,
     )
-
-    website: str | None = Field(
-        default=None,
-        max_length=300,
-    )
+    website: str | None = Field(default=None, max_length=300)
 
     @field_validator("business_name", "contact_person")
     @classmethod
-    def validate_names(
-        cls,
-        value: str | None,
-    ) -> str | None:
+    def validate_names(cls, value: str | None) -> str | None:
         if value is None:
             return value
 
@@ -279,10 +227,7 @@ class VendorProfileUpdate(BaseModel):
 
     @field_validator("category", mode="before")
     @classmethod
-    def validate_category(
-        cls,
-        value: str | None,
-    ) -> str | None:
+    def validate_category(cls, value: str | None) -> str | None:
         if value is None:
             return value
 
@@ -303,10 +248,7 @@ class VendorProfileUpdate(BaseModel):
 
     @field_validator("email")
     @classmethod
-    def validate_email(
-        cls,
-        value: str | None,
-    ) -> str | None:
+    def validate_email(cls, value: str | None) -> str | None:
         if value is None:
             return value
 
@@ -319,10 +261,7 @@ class VendorProfileUpdate(BaseModel):
 
     @field_validator("phone")
     @classmethod
-    def validate_phone(
-        cls,
-        value: str | None,
-    ) -> str | None:
+    def validate_phone(cls, value: str | None) -> str | None:
         if value is None:
             return value
 
@@ -351,9 +290,7 @@ class VendorProfileUpdate(BaseModel):
 
         for service in value:
             if not isinstance(service, str):
-                raise ValueError(
-                    "Every service must be a text value."
-                )
+                raise ValueError("Every service must be a text value.")
 
             service = service.strip()
 
@@ -369,10 +306,7 @@ class VendorProfileUpdate(BaseModel):
 
     @field_validator("website")
     @classmethod
-    def validate_website(
-        cls,
-        value: str | None,
-    ) -> str | None:
+    def validate_website(cls, value: str | None) -> str | None:
         if value is None:
             return value
 
@@ -395,6 +329,19 @@ class VendorApprovalRequest(BaseModel):
     )
 
     status: Literal["Approved", "Rejected"]
+    rejection_reason: str | None = Field(default=None, max_length=500)
+
+    @field_validator("rejection_reason")
+    @classmethod
+    def validate_rejection_reason(
+        cls,
+        value: str | None,
+    ) -> str | None:
+        if value is None:
+            return None
+
+        value = value.strip()
+        return value or None
 
 
 # ---------------------------------------------------------
@@ -413,6 +360,210 @@ def get_vendor_registrations_collection(request: Request):
     return request.app.state.db["vendor_event_registrations"]
 
 
+def get_user_id(user: dict) -> str:
+    user_id = user.get("_id", user.get("id"))
+
+    if user_id is None or not str(user_id).strip():
+        raise HTTPException(
+            status_code=401,
+            detail="Unable to identify your account. Please log in again.",
+        )
+
+    return str(user_id)
+
+
+# ---------------------------------------------------------
+# NOTIFICATION HELPERS
+# ---------------------------------------------------------
+
+def send_vendor_notification(
+    request,
+    recipient_id,
+    title,
+    message,
+    *,
+    notification_type="info",
+    category="vendor",
+    related_id=None,
+    related_type=None,
+    metadata=None,
+    dedupe_key=None,
+):
+    """Send a best-effort notification."""
+
+    if not recipient_id:
+        return
+
+    try:
+        create_notification(
+            request.app.state.db,
+            str(recipient_id),
+            title,
+            message,
+            notification_type=notification_type,
+            category=category,
+            related_id=str(related_id) if related_id is not None else None,
+            related_type=related_type,
+            metadata=metadata or {},
+            dedupe_key=dedupe_key,
+        )
+    except Exception:
+        # A notification failure must never undo the main operation.
+        return
+
+
+def notify_admins_new_vendor_application(
+    request,
+    vendor: dict,
+):
+    db = request.app.state.db
+
+    vendor_id = str(vendor.get("_id", ""))
+    business_name = vendor.get("business_name") or "A vendor"
+    category_name = vendor.get("category") or "Other"
+
+    try:
+        admins = db["users"].find(
+            {
+                "role": {
+                    "$in": [
+                        "Admin",
+                        "admin",
+                        "Administrator",
+                        "administrator",
+                    ]
+                }
+            },
+            {"_id": 1},
+        )
+
+        for admin_user in admins:
+            admin_id = admin_user.get("_id")
+
+            if not admin_id:
+                continue
+
+            send_vendor_notification(
+                request,
+                str(admin_id),
+                "New vendor application",
+                (
+                    f"{business_name} submitted a "
+                    f"{category_name} vendor application for review."
+                ),
+                notification_type="info",
+                category="vendor",
+                related_id=vendor_id,
+                related_type="vendor_application",
+                metadata={
+                    "vendor_id": vendor_id,
+                    "business_name": business_name,
+                    "category": category_name,
+                    "status": "Pending",
+                    "destination": "vendor-applications",
+                },
+                dedupe_key=f"vendor_application_submitted:{vendor_id}",
+            )
+
+    except PyMongoError:
+        return
+
+
+def notify_vendor_application_decision(
+    request,
+    vendor: dict,
+    status: str,
+    rejection_reason: str | None = None,
+):
+    vendor_id = str(vendor.get("_id", ""))
+    business_name = vendor.get("business_name") or "Your vendor profile"
+
+    if status == "Approved":
+        title = "Vendor application approved"
+        message = (
+            f"Your vendor application for {business_name} has been approved. "
+            "You can now access assigned event opportunities."
+        )
+        notification_kind = "success"
+    else:
+        title = "Vendor application rejected"
+        reason = rejection_reason or "No additional reason was provided."
+
+        message = (
+            f"Your vendor application for {business_name} was rejected. "
+            f"Reason: {reason}"
+        )
+        notification_kind = "warning"
+
+    send_vendor_notification(
+        request,
+        vendor.get("user_id"),
+        title,
+        message,
+        notification_type=notification_kind,
+        category="vendor",
+        related_id=vendor_id,
+        related_type="vendor_application",
+        metadata={
+            "vendor_id": vendor_id,
+            "business_name": business_name,
+            "status": status,
+            "rejection_reason": (
+                rejection_reason if status == "Rejected" else None
+            ),
+            "destination": "vendor-profile",
+        },
+        dedupe_key=f"vendor_application_{status.lower()}:{vendor_id}",
+    )
+
+
+def notify_vendor_event_registration(
+    request,
+    registration: dict,
+    restored: bool = False,
+):
+    event_name = registration.get("event_name") or "the event"
+    business_name = registration.get("business_name") or "Your business"
+
+    registration_id = str(registration.get("_id", ""))
+    event_id = str(registration.get("event_id", ""))
+
+    action = "restored" if restored else "confirmed"
+
+    updated_at = registration.get("updated_at")
+
+    if isinstance(updated_at, datetime):
+        dedupe_timestamp = updated_at.isoformat()
+    else:
+        dedupe_timestamp = str(updated_at or "")
+
+    send_vendor_notification(
+        request,
+        registration.get("user_id"),
+        "Vendor registration confirmed",
+        (
+            f"{business_name}'s registration for {event_name} "
+            f"has been {action}."
+        ),
+        notification_type="success",
+        category="vendor",
+        related_id=registration_id or event_id,
+        related_type="vendor_event_registration",
+        metadata={
+            "registration_id": registration_id,
+            "event_id": event_id,
+            "event_name": event_name,
+            "business_name": business_name,
+            "status": "Registered",
+            "destination": "vendor-events",
+        },
+        dedupe_key=(
+            f"vendor_event_registration:{registration_id}:"
+            f"{dedupe_timestamp}"
+        ),
+    )
+
+
 # ---------------------------------------------------------
 # AUTHORIZATION HELPERS
 # ---------------------------------------------------------
@@ -420,7 +571,9 @@ def get_vendor_registrations_collection(request: Request):
 def require_vendor(
     user: dict = Depends(get_current_user),
 ) -> dict:
-    if user.get("role") != "Vendor":
+    role = str(user.get("role", "")).strip().casefold()
+
+    if role != "vendor":
         raise HTTPException(
             status_code=403,
             detail="Only vendor accounts can perform this action.",
@@ -429,20 +582,27 @@ def require_vendor(
     return user
 
 
+def require_admin(
+    current_user=Depends(get_current_user),
+):
+    role = str(current_user.get("role", "")).strip().casefold()
+
+    if role not in ADMIN_ROLES:
+        raise HTTPException(
+            status_code=403,
+            detail="Admin or Organizer access required.",
+        )
+
+    return current_user
+
+
 def require_approved_vendor_profile(
     request: Request,
     user: dict,
 ) -> dict:
-    """
-    Return the logged-in vendor's profile.
-
-    Vendor event registration is allowed only for approved
-    vendor profiles.
-    """
-
     vendor = get_vendor_by_user_id(
         get_vendors_collection(request),
-        str(user["_id"]),
+        get_user_id(user),
     )
 
     if not vendor:
@@ -463,18 +623,6 @@ def require_approved_vendor_profile(
     return vendor
 
 
-async def require_admin(
-    current_user=Depends(get_current_user),
-):
-    if current_user.get("role") not in ["Admin", "Organizer"]:
-        raise HTTPException(
-            status_code=403,
-            detail="Admin or Organizer access required.",
-        )
-
-    return current_user
-
-
 # ---------------------------------------------------------
 # SERIALIZATION HELPERS
 # ---------------------------------------------------------
@@ -484,20 +632,12 @@ def serialize_vendor(vendor: dict) -> dict:
 
     vendor_id = result.pop("_id", result.get("id"))
 
-    result["id"] = (
-        str(vendor_id)
-        if vendor_id is not None
-        else None
-    )
+    result["id"] = str(vendor_id) if vendor_id is not None else None
 
-    # Do not expose the internal user ID in public vendor responses.
+    # Never expose internal user IDs in public vendor responses.
     result.pop("user_id", None)
 
-    for field in (
-        "created_at",
-        "updated_at",
-        "approved_at",
-    ):
+    for field in ("created_at", "updated_at", "approved_at"):
         value = result.get(field)
 
         if isinstance(value, datetime):
@@ -509,26 +649,25 @@ def serialize_vendor(vendor: dict) -> dict:
 def serialize_vendor_for_owner(vendor: dict) -> dict:
     result = serialize_vendor(vendor)
 
-    # The owner can see their associated account ID.
-    result["user_id"] = vendor.get("user_id")
+    # Preserve the existing owner response structure.
+    if vendor.get("user_id") is not None:
+        result["user_id"] = str(vendor["user_id"])
 
     return result
 
 
 def serialize_event_for_vendor(event: dict) -> dict:
-    """
-    Serialize event data for the vendor's assigned event list.
-    """
-
     event_id = str(event.get("_id", event.get("id", "")))
 
-    event_date = (
-        event.get("event_date")
-        or event.get("date")
+    event_date = event.get("event_date") or event.get("date") or ""
+    end_date = event.get("end_date") or event_date
+
+    venue = (
+        event.get("venue_name")
+        or event.get("venue")
+        or event.get("location")
         or ""
     )
-
-    end_date = event.get("end_date") or event_date
 
     return {
         "id": event_id,
@@ -549,30 +688,20 @@ def serialize_event_for_vendor(event: dict) -> dict:
         "date": str(event_date),
         "start_time": event.get("start_time") or "10:00",
         "end_time": event.get("end_time") or "16:00",
-        "venue": (
-            event.get("venue_name")
-            or event.get("venue")
-            or event.get("location")
-            or ""
-        ),
-        "venue_name": (
-            event.get("venue_name")
-            or event.get("venue")
-            or event.get("location")
-            or ""
-        ),
+        "venue": venue,
+        "venue_name": venue,
         "status": event.get("status") or "Scheduled",
         "organizer_id": str(event.get("organizer_id") or ""),
     }
 
 
-def serialize_vendor_registration(registration: dict) -> dict:
+def serialize_vendor_registration(registration: dict | None) -> dict | None:
+    if registration is None:
+        return None
+
     result = dict(registration)
 
-    registration_id = result.pop(
-        "_id",
-        result.get("id"),
-    )
+    registration_id = result.pop("_id", result.get("id"))
 
     result["id"] = (
         str(registration_id)
@@ -580,20 +709,13 @@ def serialize_vendor_registration(registration: dict) -> dict:
         else None
     )
 
-    for field in (
-        "registered_at",
-        "updated_at",
-    ):
+    for field in ("registered_at", "updated_at", "cancelled_at"):
         value = result.get(field)
 
         if isinstance(value, datetime):
             result[field] = value.isoformat()
 
-    for field in (
-        "vendor_id",
-        "event_id",
-        "user_id",
-    ):
+    for field in ("vendor_id", "event_id", "user_id"):
         if result.get(field) is not None:
             result[field] = str(result[field])
 
@@ -608,9 +730,7 @@ def get_vendor_by_user_id(
     collection,
     user_id: str,
 ) -> dict | None:
-    return collection.find_one(
-        {"user_id": user_id}
-    )
+    return collection.find_one({"user_id": str(user_id)})
 
 
 def get_vendor_or_404(
@@ -623,9 +743,7 @@ def get_vendor_or_404(
             detail="Invalid vendor ID.",
         )
 
-    vendor = collection.find_one(
-        {"_id": ObjectId(vendor_id)}
-    )
+    vendor = collection.find_one({"_id": ObjectId(vendor_id)})
 
     if not vendor:
         raise HTTPException(
@@ -680,19 +798,7 @@ def normalize_id_list(values) -> list[str]:
 
 
 def event_has_ended(event: dict) -> bool:
-    """
-    Determine whether the event has ended.
-
-    Event dates in this application use YYYY-MM-DD.
-    Event times use HH:MM.
-    """
-
-    event_date = (
-        event.get("event_date")
-        or event.get("date")
-        or ""
-    )
-
+    event_date = event.get("event_date") or event.get("date") or ""
     end_date = event.get("end_date") or event_date
     end_time = event.get("end_time") or "16:00"
 
@@ -701,9 +807,7 @@ def event_has_ended(event: dict) -> bool:
             f"{end_date} {end_time}",
             "%Y-%m-%d %H:%M",
         ).replace(tzinfo=timezone.utc)
-
     except (ValueError, TypeError):
-        # Do not assume malformed legacy events are completed.
         return False
 
     return event_end <= datetime.now(timezone.utc)
@@ -713,13 +817,7 @@ def validate_event_for_vendor_registration(
     event: dict,
     vendor_id: str,
 ) -> None:
-    """
-    Validate that the event is available to this vendor.
-    """
-
-    assigned_vendor_ids = normalize_id_list(
-        event.get("vendor_ids")
-    )
+    assigned_vendor_ids = normalize_id_list(event.get("vendor_ids"))
 
     if vendor_id not in assigned_vendor_ids:
         raise HTTPException(
@@ -730,9 +828,7 @@ def validate_event_for_vendor_registration(
             ),
         )
 
-    event_status = str(
-        event.get("status") or ""
-    ).strip().casefold()
+    event_status = str(event.get("status") or "").strip().casefold()
 
     if event_status in {"cancelled", "canceled"}:
         raise HTTPException(
@@ -759,13 +855,9 @@ def create_vendor_profile(
     user: dict = Depends(require_vendor),
 ):
     collection = get_vendors_collection(request)
+    user_id = get_user_id(user)
 
-    user_id = str(user["_id"])
-
-    existing_vendor = get_vendor_by_user_id(
-        collection,
-        user_id,
-    )
+    existing_vendor = get_vendor_by_user_id(collection, user_id)
 
     if existing_vendor:
         raise HTTPException(
@@ -777,7 +869,6 @@ def create_vendor_profile(
         )
 
     now = datetime.now(timezone.utc)
-
     vendor_data = data.model_dump()
 
     vendor_data.update({
@@ -799,11 +890,10 @@ def create_vendor_profile(
         if not created_vendor:
             raise HTTPException(
                 status_code=500,
-                detail=(
-                    "Vendor profile was created but "
-                    "could not be retrieved."
-                ),
+                detail="Vendor profile was created but could not be retrieved.",
             )
+
+        notify_admins_new_vendor_application(request, created_vendor)
 
         return {
             "success": True,
@@ -811,17 +901,13 @@ def create_vendor_profile(
                 "Vendor profile submitted successfully. "
                 "It is awaiting administrator approval."
             ),
-            "vendor": serialize_vendor_for_owner(
-                created_vendor
-            ),
+            "vendor": serialize_vendor_for_owner(created_vendor),
         }
 
     except DuplicateKeyError:
         raise HTTPException(
             status_code=409,
-            detail=(
-                "A vendor profile already exists for this account."
-            ),
+            detail="A vendor profile already exists for this account.",
         )
 
     except PyMongoError:
@@ -841,11 +927,9 @@ def get_my_vendor_profile(
     request: Request,
     user: dict = Depends(require_vendor),
 ):
-    collection = get_vendors_collection(request)
-
     vendor = get_vendor_by_user_id(
-        collection,
-        str(user["_id"]),
+        get_vendors_collection(request),
+        get_user_id(user),
     )
 
     if not vendor:
@@ -875,7 +959,7 @@ def update_my_vendor_profile(
 
     vendor = get_vendor_by_user_id(
         collection,
-        str(user["_id"]),
+        get_user_id(user),
     )
 
     if not vendor:
@@ -897,8 +981,9 @@ def update_my_vendor_profile(
 
     update_data["updated_at"] = datetime.now(timezone.utc)
 
-    # Any profile edit after approval requires a fresh review.
-    if vendor.get("status") == "Approved":
+    was_approved = vendor.get("status") == "Approved"
+
+    if was_approved:
         update_data["status"] = "Pending"
         update_data["approved_at"] = None
         update_data["rejection_reason"] = None
@@ -913,15 +998,26 @@ def update_my_vendor_profile(
             {"_id": vendor["_id"]}
         )
 
+        if not updated_vendor:
+            raise HTTPException(
+                status_code=500,
+                detail="Updated vendor profile could not be retrieved.",
+            )
+
+        # An approved vendor's edited profile needs a new review.
+        if was_approved:
+            notify_admins_new_vendor_application(
+                request,
+                updated_vendor,
+            )
+
         return {
             "success": True,
             "message": (
                 "Vendor profile updated successfully. "
                 "Changes may require administrator approval."
             ),
-            "vendor": serialize_vendor_for_owner(
-                updated_vendor
-            ),
+            "vendor": serialize_vendor_for_owner(updated_vendor),
         }
 
     except PyMongoError:
@@ -932,38 +1028,25 @@ def update_my_vendor_profile(
 
 
 # ---------------------------------------------------------
-# VENDOR EVENT REGISTRATION
-# ---------------------------------------------------------
-
+# GET ASSIGNED VENDOR EVENTS
 # GET /api/vendors/events/assigned
-#
-# Returns events assigned to the logged-in vendor, including
-# the vendor's registration status for each event.
+# ---------------------------------------------------------
 
 @router.get("/events/assigned")
 def get_assigned_vendor_events(
     request: Request,
     user: dict = Depends(require_vendor),
 ):
-    vendor = require_approved_vendor_profile(
-        request,
-        user,
-    )
+    vendor = require_approved_vendor_profile(request, user)
 
     vendor_id = str(vendor["_id"])
 
     events_collection = get_events_collection(request)
-    registrations_collection = (
-        get_vendor_registrations_collection(request)
-    )
+    registrations_collection = get_vendor_registrations_collection(request)
 
     try:
-        # Create a unique registration index.
         registrations_collection.create_index(
-            [
-                ("vendor_id", 1),
-                ("event_id", 1),
-            ],
+            [("vendor_id", 1), ("event_id", 1)],
             unique=True,
             name="unique_vendor_event_registration",
         )
@@ -971,10 +1054,7 @@ def get_assigned_vendor_events(
         events = list(
             events_collection.find({
                 "vendor_ids": vendor_id,
-            }).sort(
-                "event_date",
-                1,
-            )
+            }).sort("event_date", 1)
         )
 
         registrations = list(
@@ -998,15 +1078,12 @@ def get_assigned_vendor_events(
 
     for event in events:
         event_id = str(event["_id"])
-
         registration = registration_by_event.get(event_id)
 
         event_data = serialize_event_for_vendor(event)
 
-        event_data["registration"] = (
-            serialize_vendor_registration(registration)
-            if registration
-            else None
+        event_data["registration"] = serialize_vendor_registration(
+            registration
         )
 
         event_data["registration_status"] = (
@@ -1024,58 +1101,41 @@ def get_assigned_vendor_events(
     }
 
 
+# ---------------------------------------------------------
+# REGISTER VENDOR FOR EVENT
 # POST /api/vendors/events/{event_id}/register
-#
-# Registers the logged-in vendor for one assigned event.
+# ---------------------------------------------------------
 
-@router.post(
-    "/events/{event_id}/register",
-    status_code=201,
-)
+@router.post("/events/{event_id}/register", status_code=201)
 def register_vendor_for_event(
     event_id: str,
     request: Request,
     user: dict = Depends(require_vendor),
 ):
-    vendor = require_approved_vendor_profile(
-        request,
-        user,
-    )
+    vendor = require_approved_vendor_profile(request, user)
 
     vendor_id = str(vendor["_id"])
-    user_id = str(user["_id"])
+    user_id = get_user_id(user)
 
-    event = get_event_or_404(
-        request,
-        event_id,
-    )
+    event = get_event_or_404(request, event_id)
 
-    validate_event_for_vendor_registration(
-        event,
-        vendor_id,
-    )
+    validate_event_for_vendor_registration(event, vendor_id)
 
-    registrations_collection = (
-        get_vendor_registrations_collection(request)
-    )
+    registrations_collection = get_vendor_registrations_collection(request)
 
     try:
-        # Enforce one registration per vendor/event pair.
         registrations_collection.create_index(
-            [
-                ("vendor_id", 1),
-                ("event_id", 1),
-            ],
+            [("vendor_id", 1), ("event_id", 1)],
             unique=True,
             name="unique_vendor_event_registration",
         )
 
-        existing_registration = (
-            registrations_collection.find_one({
-                "vendor_id": vendor_id,
-                "event_id": str(event["_id"]),
-            })
-        )
+        event_id_string = str(event["_id"])
+
+        existing_registration = registrations_collection.find_one({
+            "vendor_id": vendor_id,
+            "event_id": event_id_string,
+        })
 
         if existing_registration:
             existing_status = str(
@@ -1091,14 +1151,15 @@ def register_vendor_for_event(
                     ),
                 )
 
-            # A previously cancelled registration can be restored.
+            now = datetime.now(timezone.utc)
+
             registrations_collection.update_one(
                 {"_id": existing_registration["_id"]},
                 {
                     "$set": {
                         "status": "Registered",
-                        "registered_at": datetime.now(timezone.utc),
-                        "updated_at": datetime.now(timezone.utc),
+                        "registered_at": now,
+                        "updated_at": now,
                     },
                     "$unset": {
                         "cancelled_at": "",
@@ -1106,26 +1167,36 @@ def register_vendor_for_event(
                 },
             )
 
-            updated_registration = (
-                registrations_collection.find_one({
-                    "_id": existing_registration["_id"],
-                })
+            updated_registration = registrations_collection.find_one({
+                "_id": existing_registration["_id"],
+            })
+
+            if not updated_registration:
+                raise HTTPException(
+                    status_code=500,
+                    detail="Registration was restored but could not be retrieved.",
+                )
+
+            notify_vendor_event_registration(
+                request,
+                updated_registration,
+                restored=True,
             )
 
             return {
                 "success": True,
-                "message": (
-                    "Your vendor registration has been restored."
-                ),
+                "message": "Your vendor registration has been restored.",
                 "registration": serialize_vendor_registration(
                     updated_registration
                 ),
             }
 
+        now = datetime.now(timezone.utc)
+
         registration = {
             "vendor_id": vendor_id,
             "user_id": user_id,
-            "event_id": str(event["_id"]),
+            "event_id": event_id_string,
             "event_name": (
                 event.get("name")
                 or event.get("title")
@@ -1134,18 +1205,26 @@ def register_vendor_for_event(
             ),
             "business_name": vendor.get("business_name", ""),
             "status": "Registered",
-            "registered_at": datetime.now(timezone.utc),
-            "updated_at": datetime.now(timezone.utc),
+            "registered_at": now,
+            "updated_at": now,
         }
 
-        result = registrations_collection.insert_one(
-            registration
-        )
+        result = registrations_collection.insert_one(registration)
 
-        saved_registration = (
-            registrations_collection.find_one({
-                "_id": result.inserted_id,
-            })
+        saved_registration = registrations_collection.find_one({
+            "_id": result.inserted_id,
+        })
+
+        if not saved_registration:
+            raise HTTPException(
+                status_code=500,
+                detail="Registration was created but could not be retrieved.",
+            )
+
+        notify_vendor_event_registration(
+            request,
+            saved_registration,
+            restored=False,
         )
 
         return {
@@ -1181,34 +1260,26 @@ def register_vendor_for_event(
         )
 
 
+# ---------------------------------------------------------
+# GET MY VENDOR EVENT REGISTRATIONS
 # GET /api/vendors/events/registrations/me
-#
-# Returns all registrations belonging to the logged-in vendor.
+# ---------------------------------------------------------
 
 @router.get("/events/registrations/me")
 def get_my_vendor_event_registrations(
     request: Request,
     user: dict = Depends(require_vendor),
 ):
-    vendor = require_approved_vendor_profile(
-        request,
-        user,
-    )
+    vendor = require_approved_vendor_profile(request, user)
 
     vendor_id = str(vendor["_id"])
-
-    registrations_collection = (
-        get_vendor_registrations_collection(request)
-    )
+    registrations_collection = get_vendor_registrations_collection(request)
 
     try:
         registrations = list(
             registrations_collection.find({
                 "vendor_id": vendor_id,
-            }).sort(
-                "registered_at",
-                -1,
-            )
+            }).sort("registered_at", -1)
         )
 
     except PyMongoError:
@@ -1235,18 +1306,9 @@ def get_my_vendor_event_registrations(
 @router.get("/")
 def list_approved_vendors(
     request: Request,
-    category: str | None = Query(
-        default=None,
-        max_length=50,
-    ),
-    city: str | None = Query(
-        default=None,
-        max_length=100,
-    ),
-    search: str | None = Query(
-        default=None,
-        max_length=150,
-    ),
+    category: str | None = Query(default=None, max_length=50),
+    city: str | None = Query(default=None, max_length=100),
+    search: str | None = Query(default=None, max_length=150),
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=20, ge=1, le=100),
 ):
@@ -1339,12 +1401,8 @@ def get_vendor_details(
 ):
     collection = get_vendors_collection(request)
 
-    vendor = get_vendor_or_404(
-        collection,
-        vendor_id,
-    )
+    vendor = get_vendor_or_404(collection, vendor_id)
 
-    # Public users can only see approved vendor profiles.
     if vendor.get("status") != "Approved":
         raise HTTPException(
             status_code=404,
@@ -1427,26 +1485,25 @@ def update_vendor_approval(
 ):
     collection = get_vendors_collection(request)
 
-    vendor = get_vendor_or_404(
-        collection,
-        vendor_id,
-    )
+    vendor = get_vendor_or_404(collection, vendor_id)
 
+    previous_status = vendor.get("status")
     now = datetime.now(timezone.utc)
+
+    rejection_reason = (
+        None
+        if data.status == "Approved"
+        else (
+            data.rejection_reason
+            or "Application rejected by administrator."
+        )
+    )
 
     update_data = {
         "status": data.status,
         "updated_at": now,
-        "approved_at": (
-            now
-            if data.status == "Approved"
-            else None
-        ),
-        "rejection_reason": (
-            None
-            if data.status == "Approved"
-            else "Application rejected by administrator."
-        ),
+        "approved_at": now if data.status == "Approved" else None,
+        "rejection_reason": rejection_reason,
     }
 
     try:
@@ -1459,14 +1516,28 @@ def update_vendor_approval(
             {"_id": vendor["_id"]}
         )
 
+        if not updated_vendor:
+            raise HTTPException(
+                status_code=500,
+                detail="Updated vendor application could not be retrieved.",
+            )
+
+        # Only notify when the status actually changes.
+        # This prevents repeated clicks from generating duplicate decisions.
+        if previous_status != data.status:
+            notify_vendor_application_decision(
+                request,
+                updated_vendor,
+                data.status,
+                rejection_reason,
+            )
+
         return {
             "success": True,
             "message": (
                 f"Vendor application {data.status.lower()} successfully."
             ),
-            "vendor": serialize_vendor_for_owner(
-                updated_vendor
-            ),
+            "vendor": serialize_vendor_for_owner(updated_vendor),
         }
 
     except PyMongoError:
