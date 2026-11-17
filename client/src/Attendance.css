@@ -1703,3 +1703,96 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+/* -------------------- Attendee edit form -------------------- */
+
+.attendance-edit-form {
+  width: 100%;
+}
+
+.attendance-edit-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  padding: 4px 0 16px;
+}
+
+.attendance-edit-field {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  min-width: 0;
+}
+
+.attendance-edit-field > span {
+  color: #475569;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.attendance-edit-field input,
+.attendance-edit-field select {
+  width: 100%;
+  min-height: 40px;
+  padding: 9px 11px;
+  border: 1px solid #dce5e1;
+  border-radius: 8px;
+  outline: none;
+  background: #fff;
+  color: #172b25;
+  font: inherit;
+  font-size: 13px;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.attendance-edit-field input:focus,
+.attendance-edit-field select:focus {
+  border-color: #258773;
+  box-shadow: 0 0 0 3px rgba(37, 135, 115, 0.11);
+}
+
+.attendance-edit-field input:disabled,
+.attendance-edit-field select:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+  background: #f5f7f6;
+}
+
+.attendance-edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 9px;
+  padding-top: 14px;
+  border-top: 1px solid #edf1ef;
+}
+
+.attendance-edit-actions button {
+  min-height: 36px;
+}
+
+.attendance-spin {
+  animation: attendance-spin 0.8s linear infinite;
+}
+
+@keyframes attendance-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 600px) {
+  .attendance-edit-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .attendance-edit-actions {
+    flex-wrap: wrap;
+  }
+
+  .attendance-edit-actions button {
+    flex: 1;
+    justify-content: center;
+  }
+}

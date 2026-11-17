@@ -32,7 +32,74 @@ IST = timezone(timedelta(hours=5, minutes=30))
 # ---------------------------------------------------------
 # REQUEST MODEL
 # ---------------------------------------------------------
+class AttendeeUpdate(BaseModel):
+    model_config = ConfigDict(
+        str_strip_whitespace=True,
+        extra="forbid",
+    )
 
+    name: str = Field(min_length=2, max_length=150)
+    email: str = Field(min_length=5, max_length=254)
+    phone: str = Field(default="", max_length=20)
+    category: str = Field(default="General", min_length=1, max_length=30)
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, value: str) -> str:
+        value = value.strip()
+
+        if len(value) < 2 or not any(c.isalpha() for c in value):
+            raise ValueError("Enter a valid full name.")
+
+        return value
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, value: str) -> str:
+        value = value.strip().lower()
+
+        if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", value):
+            raise ValueError("Enter a valid email address.")
+
+        return value
+
+    @field_validator("phone")
+    @classmethod
+    def validate_phone(cls, value: str) -> str:
+        value = value.strip()
+
+        if not value:
+            return ""
+
+        if not re.fullmatch(r"[0-9+\-\s()]{7,20}", value):
+            raise ValueError("Enter a valid phone number.")
+
+        digits = len(re.sub(r"\D", "", value))
+
+        if not 7 <= digits <= 15:
+            raise ValueError("Enter a valid phone number.")
+
+        return value
+
+    @field_validator("category", mode="before")
+    @classmethod
+    def validate_category(cls, value) -> str:
+        if not isinstance(value, str):
+            raise ValueError("Select a valid attendee category.")
+
+        allowed = {
+            category.casefold(): category
+            for category in CATEGORIES
+        }
+
+        normalized = value.strip().casefold()
+
+        if normalized not in allowed:
+            raise ValueError(
+                "Select General, VIP, Speaker, Volunteer, Guest, or Sponsor."
+            )
+
+        return allowed[normalized]
 class AttendeeRegistration(BaseModel):
     model_config = ConfigDict(
         str_strip_whitespace=True,
@@ -549,7 +616,284 @@ def get_event_attendees(
 # REGISTER FOR AN EVENT
 # POST /api/attendees/register
 # ---------------------------------------------------------
+# ---------------------------------------------------------
+# UPDATE ATTENDEE REGISTRATION
+# PUT /api/attendees/registrations/{registration_id}
+# ---------------------------------------------------------
 
+@router.put("/registrations/{registration_id}")
+def update_attendee_registration(
+    registration_id: str,
+    data: AttendeeUpdate,
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Admin:
+        Can update any attendee registration.
+
+    Organizer:
+        Can update registrations belonging to their own events.
+
+    Updates:
+        - Attendee name
+        - Email
+        - Phone
+        - Category
+
+    Also synchronizes the associated ticket's attendee details.
+    """
+
+    db = request.app.state.db
+
+    attendees = db["attendees"]
+    events = db["events"]
+    tickets = db["tickets"]
+
+    # -----------------------------------------------------
+    # 1. Validate registration ID
+    # -----------------------------------------------------
+
+    if not ObjectId.is_valid(registration_id):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid registration ID.",
+        )
+
+    registration_oid = ObjectId(registration_id)
+
+    # -----------------------------------------------------
+    # 2. Check user role
+    # -----------------------------------------------------
+
+    role = str(
+        current_user.get("role", "")
+    ).strip().lower()
+
+    if role not in {"admin", "organizer"}:
+        raise HTTPException(
+            status_code=403,
+            detail="Only organizers and admins can update attendee details.",
+        )
+
+    # -----------------------------------------------------
+    # 3. Retrieve registration
+    # -----------------------------------------------------
+
+    try:
+        registration = attendees.find_one({
+            "_id": registration_oid,
+        })
+
+    except PyMongoError:
+        raise HTTPException(
+            status_code=503,
+            detail="Unable to retrieve attendee registration.",
+        )
+
+    if not registration:
+        raise HTTPException(
+            status_code=404,
+            detail="Attendee registration not found.",
+        )
+
+    # -----------------------------------------------------
+    # 4. Prevent editing cancelled registrations
+    # -----------------------------------------------------
+
+    registration_status = str(
+        registration.get("status", "")
+    ).strip().lower()
+
+    if registration_status in {"cancelled", "canceled"}:
+        raise HTTPException(
+            status_code=409,
+            detail="Cancelled registrations cannot be updated.",
+        )
+
+    # -----------------------------------------------------
+    # 5. Verify event and organizer ownership
+    # -----------------------------------------------------
+
+    event_oid = get_registration_event_id(registration)
+
+    if not event_oid:
+        raise HTTPException(
+            status_code=400,
+            detail="The registration has an invalid event reference.",
+        )
+
+    try:
+        event = events.find_one({
+            "_id": event_oid,
+        })
+
+    except PyMongoError:
+        raise HTTPException(
+            status_code=503,
+            detail="Unable to retrieve event details.",
+        )
+
+    if not event:
+        raise HTTPException(
+            status_code=404,
+            detail="The associated event was not found.",
+        )
+
+    if role == "organizer":
+        current_user_id = get_user_id(current_user)
+
+        event_owner_id = str(
+            event.get("organizer_id") or ""
+        )
+
+        if not current_user_id or event_owner_id != current_user_id:
+            raise HTTPException(
+                status_code=403,
+                detail="You can only update attendees for your own events.",
+            )
+
+    # -----------------------------------------------------
+    # 6. Check duplicate email within the same event
+    # -----------------------------------------------------
+
+    new_email = data.email.strip().lower()
+
+    try:
+        duplicate = attendees.find_one({
+            "event_id": registration.get("event_id"),
+            "email": new_email,
+            "_id": {"$ne": registration_oid},
+        })
+
+    except PyMongoError:
+        raise HTTPException(
+            status_code=503,
+            detail="Unable to validate attendee email.",
+        )
+
+    if duplicate:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Another attendee is already registered for this event "
+                "with this email address."
+            ),
+        )
+
+    # -----------------------------------------------------
+    # 7. Update registration
+    # -----------------------------------------------------
+
+    updated_at = datetime.now(timezone.utc)
+
+    update_fields = {
+        "name": data.name,
+        "email": new_email,
+        "phone": data.phone,
+        "category": data.category,
+        "updated_at": updated_at,
+    }
+
+    try:
+        result = attendees.update_one(
+            {
+                "_id": registration_oid,
+                "status": {
+                    "$nin": ["Cancelled", "Canceled"]
+                },
+            },
+            {
+                "$set": update_fields,
+            },
+        )
+
+        if result.matched_count == 0:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "Registration status changed. "
+                    "Refresh and try again."
+                ),
+            )
+
+    except HTTPException:
+        raise
+
+    except DuplicateKeyError:
+        raise HTTPException(
+            status_code=409,
+            detail="This email is already registered for the event.",
+        )
+
+    except PyMongoError:
+        raise HTTPException(
+            status_code=503,
+            detail="Unable to update attendee registration.",
+        )
+
+    # -----------------------------------------------------
+    # 8. Synchronize associated ticket
+    # -----------------------------------------------------
+
+    ticket_synced = True
+
+    try:
+        tickets.update_one(
+            {
+                "registration_id": str(registration_oid),
+            },
+            {
+                "$set": {
+                    "attendee_name": data.name,
+                    "attendee_email": new_email,
+                    "attendee_phone": data.phone,
+                    "category": data.category,
+                    "updated_at": updated_at,
+                },
+            },
+        )
+
+    except PyMongoError as exc:
+        ticket_synced = False
+
+        print(
+            "Ticket attendee details synchronization failed. "
+            f"Registration ID: {registration_id}; "
+            f"Error: {type(exc).__name__}: {exc}"
+        )
+
+    # -----------------------------------------------------
+    # 9. Return updated attendee details
+    # -----------------------------------------------------
+
+    return {
+        "success": True,
+        "message": (
+            "Attendee details updated successfully."
+            if ticket_synced
+            else (
+                "Registration updated, but ticket details "
+                "could not be synchronized. Please refresh and retry."
+            )
+        ),
+        "ticket_synced": ticket_synced,
+        "attendee": {
+            "attendee_id": str(registration_oid),
+            "registration_id": str(registration_oid),
+            "name": data.name,
+            "email": new_email,
+            "phone": data.phone,
+            "category": data.category,
+            "registration_status": registration.get(
+                "status", "Registered"
+            ),
+            "registered_at": serialize_datetime(
+                registration.get("registered_at")
+            ),
+            "updated_at": serialize_datetime(updated_at),
+        },
+    }
 @router.post("/register", status_code=201)
 def register_attendee(
     data: AttendeeRegistration,

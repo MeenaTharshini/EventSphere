@@ -1,4 +1,3 @@
-// src/pages/Attendance.jsx
 
 import {
   useCallback,
@@ -22,8 +21,10 @@ import {
   LoaderCircle,
   Mail,
   MapPin,
+  Pencil,
   Phone,
   RefreshCw,
+  Save,
   ScanLine,
   Search,
   ShieldCheck,
@@ -60,6 +61,15 @@ const ATTENDANCE_FILTER = {
   UNKNOWN: "Unknown",
 };
 
+const ATTENDEE_CATEGORIES = [
+  "General",
+  "VIP",
+  "Speaker",
+  "Volunteer",
+  "Guest",
+  "Sponsor",
+];
+
 /* -------------------- Auth / API helpers -------------------- */
 
 function getToken() {
@@ -76,7 +86,6 @@ function getUser() {
   for (const storage of [localStorage, sessionStorage]) {
     try {
       const value = storage.getItem("user");
-
       if (value) return JSON.parse(value);
     } catch {
       // Ignore invalid stored user data.
@@ -293,10 +302,6 @@ function checkInDate(ticket) {
   );
 }
 
-/**
- * Determines whether an event has already passed.
- * Date-only values count as passed once that calendar day ends.
- */
 function hasEventPassed(ticket) {
   const rawDate = getRawEventDate(ticket);
 
@@ -352,12 +357,6 @@ function normalizeStatus(ticket) {
   return STATUS.UNKNOWN;
 }
 
-/**
- * Attendance mapping:
- * Used      -> Present
- * Valid     -> Absent if event passed, otherwise Pending
- * Cancelled -> Cancelled
- */
 function getAttendanceStatus(ticket) {
   const status = normalizeStatus(ticket);
 
@@ -516,7 +515,6 @@ function AttendancePieChart({ present, absent }) {
       <div className="attendance-panel-heading">
         <div>
           <span className="attendance-section-kicker">OVERVIEW</span>
-
           <h2>
             <Activity size={16} />
             Present vs Absent
@@ -540,14 +538,12 @@ function AttendancePieChart({ present, absent }) {
         <div className="attendance-chart-legend">
           <div className="attendance-chart-legend-item">
             <span className="attendance-chart-dot attendance-chart-dot--present" />
-
             <div>
               <strong>Present</strong>
               <small>
                 {present} attendee{present === 1 ? "" : "s"}
               </small>
             </div>
-
             <span className="attendance-chart-percentage">
               {presentPercentage.toFixed(1)}%
             </span>
@@ -555,14 +551,12 @@ function AttendancePieChart({ present, absent }) {
 
           <div className="attendance-chart-legend-item">
             <span className="attendance-chart-dot attendance-chart-dot--absent" />
-
             <div>
               <strong>Absent</strong>
               <small>
                 {absent} attendee{absent === 1 ? "" : "s"}
               </small>
             </div>
-
             <span className="attendance-chart-percentage">
               {absentPercentage.toFixed(1)}%
             </span>
@@ -667,7 +661,6 @@ function ProfileSection({ icon, title, children }) {
         {icon}
         {title}
       </h3>
-
       <div>{children}</div>
     </section>
   );
@@ -711,12 +704,22 @@ export default function Attendance() {
   const [verification, setVerification] = useState(null);
   const [actionLoading, setActionLoading] = useState("");
 
-  // Attendee profile (opened by clicking an attendee name)
+  // Attendee profile.
   const [profileTicket, setProfileTicket] = useState(null);
   const [profileDetails, setProfileDetails] = useState(null);
   const [profileEvent, setProfileEvent] = useState(null);
   const [profileLoading, setProfileLoading] = useState(false);
   const [profileError, setProfileError] = useState("");
+
+  // Attendee editing.
+  const [editingProfile, setEditingProfile] = useState(false);
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [editForm, setEditForm] = useState({
+    name: "",
+    email: "",
+    phone: "",
+    category: "General",
+  });
 
   const [ticketCode, setTicketCode] = useState("");
   const [scannedTicket, setScannedTicket] = useState(null);
@@ -731,6 +734,8 @@ export default function Attendance() {
   const profileRequestRef = useRef(0);
   const eventAttendeesCache = useRef(new Map());
 
+  /* -------------------- Load tickets -------------------- */
+
   const loadTickets = useCallback(async ({ silent = false } = {}) => {
     if (silent) {
       setRefreshing(true);
@@ -743,8 +748,6 @@ export default function Attendance() {
     try {
       const data = await apiRequest("/tickets");
       setTickets(extractTickets(data));
-
-      // Registration details may have changed.
       eventAttendeesCache.current.clear();
     } catch (err) {
       setError(err.message || "Unable to load tickets.");
@@ -762,7 +765,8 @@ export default function Attendance() {
     }
   }, [authenticated, loadTickets]);
 
-  // Unique events derived from the ticket records.
+  /* -------------------- Derived event data -------------------- */
+
   const events = useMemo(() => {
     const eventMap = new Map();
 
@@ -871,7 +875,6 @@ export default function Attendance() {
 
   const visibleTickets = useMemo(() => {
     const start = (currentPage - 1) * PAGE_SIZE;
-
     return filteredTickets.slice(start, start + PAGE_SIZE);
   }, [filteredTickets, currentPage]);
 
@@ -891,6 +894,8 @@ export default function Attendance() {
     Boolean(search) ||
     attendanceFilter !== ATTENDANCE_FILTER.ALL ||
     selectedEventId !== "all";
+
+  /* -------------------- Local ticket updates -------------------- */
 
   const updateTicketLocally = (id, patch) => {
     const targetId = String(id);
@@ -937,10 +942,11 @@ export default function Attendance() {
     setProfileDetails(null);
     setProfileEvent(null);
     setProfileError("");
+    setEditingProfile(false);
+    setSavingProfile(false);
     setError("");
     setNotice("");
 
-    // The registration endpoint is restricted to organizers/admins.
     if (!isOrganizer) return;
 
     const evId = eventId(ticket);
@@ -960,7 +966,6 @@ export default function Attendance() {
         eventAttendeesCache.current.set(evId, payload);
       }
 
-      // Ignore stale responses if another profile was opened meanwhile.
       if (profileRequestRef.current !== requestId) return;
 
       const list = Array.isArray(payload?.attendees)
@@ -975,10 +980,13 @@ export default function Attendance() {
         list.find(
           (item) => regId && String(item.attendee_id) === regId
         ) ||
-        list.find((item) => tId && item.ticket?.ticket_id === tId) ||
+        list.find(
+          (item) => tId && item.ticket?.ticket_id === tId
+        ) ||
         list.find(
           (item) =>
-            email && String(item.email || "").trim().toLowerCase() === email
+            email &&
+            String(item.email || "").trim().toLowerCase() === email
         ) ||
         null;
 
@@ -1004,7 +1012,7 @@ export default function Attendance() {
   };
 
   const closeProfile = () => {
-    if (actionLoading) return;
+    if (actionLoading || savingProfile) return;
 
     profileRequestRef.current += 1;
 
@@ -1013,18 +1021,198 @@ export default function Attendance() {
     setProfileEvent(null);
     setProfileError("");
     setProfileLoading(false);
+    setEditingProfile(false);
+    setEditForm({
+      name: "",
+      email: "",
+      phone: "",
+      category: "General",
+    });
   };
 
-  // Close dialogs with the Escape key.
+  /* -------------------- Edit attendee -------------------- */
+
+  const startEditingProfile = () => {
+    if (!isOrganizer || !profileDetails) {
+      setProfileError(
+        "Attendee registration details are not available for editing."
+      );
+      return;
+    }
+
+    const id = String(
+      profileDetails.attendee_id || registrationId(profileTicket) || ""
+    );
+
+    if (!id) {
+      setProfileError("Registration ID is missing. Cannot edit this attendee.");
+      return;
+    }
+
+    setEditForm({
+      name: profileDetails.name || "",
+      email: profileDetails.email || "",
+      phone: profileDetails.phone || "",
+      category: profileDetails.category || "General",
+    });
+
+    setProfileError("");
+    setEditingProfile(true);
+  };
+
+  const cancelEditingProfile = () => {
+    if (savingProfile) return;
+
+    setEditingProfile(false);
+    setProfileError("");
+    setEditForm({
+      name: "",
+      email: "",
+      phone: "",
+      category: "General",
+    });
+  };
+
+  const handleEditFormChange = (event) => {
+    const { name, value } = event.target;
+
+    setEditForm((previous) => ({
+      ...previous,
+      [name]: value,
+    }));
+  };
+
+  const saveAttendeeChanges = async (event) => {
+    event.preventDefault();
+
+    if (!isOrganizer || !profileDetails || !profileTicket) return;
+
+    const id = String(
+      profileDetails.attendee_id || registrationId(profileTicket) || ""
+    );
+
+    if (!id) {
+      setProfileError("Registration ID is missing. Cannot update attendee.");
+      return;
+    }
+
+    const name = editForm.name.trim();
+    const email = editForm.email.trim().toLowerCase();
+    const phone = editForm.phone.trim();
+    const category = editForm.category.trim();
+
+    if (!name) {
+      setProfileError("Please enter the attendee's name.");
+      return;
+    }
+
+    if (!email) {
+      setProfileError("Please enter the attendee's email address.");
+      return;
+    }
+
+    const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+    if (!emailPattern.test(email)) {
+      setProfileError("Please enter a valid email address.");
+      return;
+    }
+
+    if (phone.length > 20) {
+      setProfileError("Phone number cannot exceed 20 characters.");
+      return;
+    }
+
+    if (!category) {
+      setProfileError("Please select an attendee category.");
+      return;
+    }
+
+    setSavingProfile(true);
+    setProfileError("");
+    setError("");
+    setNotice("");
+
+    try {
+      const result = await apiRequest(
+        `/attendees/registrations/${encodeURIComponent(id)}`,
+        {
+          method: "PUT",
+          body: JSON.stringify({
+            name,
+            email,
+            phone,
+            category,
+          }),
+        }
+      );
+
+      if (!result?.success) {
+        throw new Error(
+          result?.message || "The attendee could not be updated."
+        );
+      }
+
+      const updatedAttendee = result.attendee || {
+        ...profileDetails,
+        name,
+        email,
+        phone,
+        category,
+      };
+
+      setProfileDetails((previous) => ({
+        ...previous,
+        ...updatedAttendee,
+        name: updatedAttendee.name || name,
+        email: updatedAttendee.email || email,
+        phone: updatedAttendee.phone ?? phone,
+        category: updatedAttendee.category || category,
+      }));
+
+      // Update the visible ticket data immediately.
+      updateTicketLocally(ticketId(profileTicket), {
+        attendee_name: name,
+        attendee_email: email,
+        attendee_phone: phone,
+        category,
+      });
+
+      // The attendee listing cache is now stale.
+      const evId = eventId(profileTicket);
+
+      if (evId) {
+        eventAttendeesCache.current.delete(evId);
+      }
+
+      setEditingProfile(false);
+
+      // Reload ticket data so the table reflects the backend response.
+      await loadTickets({ silent: true });
+
+      setNotice(
+        result.message || "Attendee details updated successfully."
+      );
+    } catch (err) {
+      setProfileError(err.message || "Unable to update attendee details.");
+    } finally {
+      setSavingProfile(false);
+    }
+  };
+
+  /* -------------------- Escape key handling -------------------- */
+
   useEffect(() => {
     if (!profileTicket && !activeTicket) return undefined;
 
     const onKeyDown = (event) => {
-      if (event.key !== "Escape" || actionLoading) return;
+      if (event.key !== "Escape" || actionLoading || savingProfile) return;
 
       if (activeTicket) {
         setActiveTicket(null);
         setVerification(null);
+      } else if (editingProfile) {
+        cancelEditingProfile();
       } else {
         profileRequestRef.current += 1;
         setProfileTicket(null);
@@ -1038,9 +1226,16 @@ export default function Attendance() {
     window.addEventListener("keydown", onKeyDown);
 
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [profileTicket, activeTicket, actionLoading]);
+  }, [
+    profileTicket,
+    activeTicket,
+    actionLoading,
+    savingProfile,
+    editingProfile,
+  ]);
 
-  // Other registrations made by the same attendee (matched by email).
+  /* -------------------- Other attendee registrations -------------------- */
+
   const otherRegistrations = useMemo(() => {
     if (!profileTicket) return [];
 
@@ -1253,7 +1448,7 @@ export default function Attendance() {
     }
   };
 
-  /* -------------------- Lookup and scanner -------------------- */
+  /* -------------------- Ticket lookup -------------------- */
 
   const findTicketInList = useCallback(
     (value) => {
@@ -1327,12 +1522,12 @@ export default function Attendance() {
     }
   };
 
-  // Always point to the latest version so the scanner callback never uses stale data.
   searchTicketRef.current = searchTicketCode;
+
+  /* -------------------- QR scanner -------------------- */
 
   const stopQrScanner = useCallback(async () => {
     const scanner = scannerRef.current;
-
     scannerRef.current = null;
 
     if (scanner) {
@@ -1401,7 +1596,7 @@ export default function Attendance() {
                 await scanner.stop();
               }
             } catch {
-              // Continue with the decoded value.
+              // Continue with decoded value.
             }
 
             if (cancelled) return;
@@ -1410,7 +1605,6 @@ export default function Attendance() {
             setScannerStarting(false);
 
             const decodedCode = qrTicketCode(decodedText);
-
             setTicketCode(decodedCode);
 
             await searchTicketRef.current?.(decodedCode);
@@ -1513,6 +1707,8 @@ export default function Attendance() {
     };
   }, []);
 
+  /* -------------------- Export and filters -------------------- */
+
   const handleExport = () => {
     if (!filteredTickets.length) {
       setError("There are no attendance records to export.");
@@ -1537,7 +1733,6 @@ export default function Attendance() {
       <main className="attendance-page">
         <section className="attendance-panel attendance-login-message">
           <ShieldCheck size={26} />
-
           <div>
             <h2>Login required</h2>
             <p>Please log in to view attendance and ticket information.</p>
@@ -1551,15 +1746,10 @@ export default function Attendance() {
 
   const profile = profileTicket
     ? {
-        name:
-          profileDetails?.name ||
-          attendeeName(profileTicket),
-        email:
-          profileDetails?.email ||
-          attendeeEmail(profileTicket),
+        name: profileDetails?.name || attendeeName(profileTicket),
+        email: profileDetails?.email || attendeeEmail(profileTicket),
         phone:
-          profileDetails?.phone ||
-          attendeePhoneFromTicket(profileTicket),
+          profileDetails?.phone || attendeePhoneFromTicket(profileTicket),
         category:
           profileDetails?.category ||
           attendeeCategoryFromTicket(profileTicket),
@@ -1599,9 +1789,7 @@ export default function Attendance() {
       <header className="attendance-header">
         <div className="attendance-heading-copy">
           <p className="attendance-eyebrow">EVENTSPHERE MANAGEMENT</p>
-
           <h1>Attendance &amp; Tickets</h1>
-
           <p className="attendance-subtitle">
             {isOrganizer
               ? "View registrations, track attendance, and check attendees in."
@@ -1643,7 +1831,6 @@ export default function Attendance() {
         >
           <AlertCircle size={16} />
           <span>{error}</span>
-
           <button
             type="button"
             aria-label="Dismiss error"
@@ -1661,7 +1848,6 @@ export default function Attendance() {
         >
           <CheckCircle2 size={16} />
           <span>{notice}</span>
-
           <button
             type="button"
             aria-label="Dismiss message"
@@ -1707,7 +1893,7 @@ export default function Attendance() {
         />
       </section>
 
-      {/* Chart + check-in desk side by side */}
+      {/* Chart and check-in desk */}
       {isOrganizer && (
         <section className="attendance-top-grid">
           <AttendancePieChart
@@ -1721,7 +1907,6 @@ export default function Attendance() {
                 <span className="attendance-section-kicker">
                   CHECK-IN DESK
                 </span>
-
                 <h2>
                   <ScanLine size={16} />
                   Event check-in
@@ -1791,7 +1976,6 @@ export default function Attendance() {
                     Starting camera…
                   </div>
                 )}
-
                 <div id={SCANNER_ID} />
               </div>
             )}
@@ -1828,12 +2012,10 @@ export default function Attendance() {
                     label="Email"
                     value={attendeeEmail(scannedTicket)}
                   />
-
                   <DetailRow
                     label="Event"
                     value={eventName(scannedTicket)}
                   />
-
                   <DetailRow
                     label="Event date"
                     value={eventDate(scannedTicket)}
@@ -1877,7 +2059,6 @@ export default function Attendance() {
             <span className="attendance-section-kicker">
               REGISTRATION RECORDS
             </span>
-
             <h2>
               <Users size={16} />
               {selectedEventId === "all"
@@ -1900,7 +2081,6 @@ export default function Attendance() {
         >
           <label className="attendance-search">
             <Search size={15} />
-
             <input
               type="search"
               placeholder="Search attendee, email, ticket..."
@@ -1928,7 +2108,6 @@ export default function Attendance() {
               onChange={(event) => setSelectedEventId(event.target.value)}
             >
               <option value="all">All events</option>
-
               {events.map((event) => (
                 <option key={event.id} value={event.id}>
                   {event.name}
@@ -1965,9 +2144,7 @@ export default function Attendance() {
             <span className="attendance-empty-icon">
               <Ticket size={22} />
             </span>
-
             <h3>No attendees found</h3>
-
             <p>
               {tickets.length
                 ? "Try changing your event, search, or attendance filter."
@@ -2024,7 +2201,6 @@ export default function Attendance() {
                               >
                                 {attendeeName(ticket)}
                               </button>
-
                               <small>{attendeeEmail(ticket)}</small>
                             </div>
                           </div>
@@ -2206,7 +2382,6 @@ export default function Attendance() {
                   <span className="attendance-section-kicker">
                     ATTENDEE DETAILS
                   </span>
-
                   <h2 id="attendance-profile-title">{profile.name}</h2>
 
                   <div className="attendance-profile-badges">
@@ -2228,7 +2403,7 @@ export default function Attendance() {
                 className="attendance-icon-button"
                 aria-label="Close attendee details"
                 onClick={closeProfile}
-                disabled={Boolean(actionLoading)}
+                disabled={Boolean(actionLoading) || savingProfile}
               >
                 <X size={16} />
               </button>
@@ -2255,17 +2430,14 @@ export default function Attendance() {
                     <strong>{profileSummary.registrations}</strong>
                     <span>Registrations</span>
                   </div>
-
                   <div>
                     <strong>{profileSummary.present}</strong>
                     <span>Present</span>
                   </div>
-
                   <div>
                     <strong>{profileSummary.absent}</strong>
                     <span>Absent</span>
                   </div>
-
                   <div>
                     <strong>{profileSummary.cancelled}</strong>
                     <span>Cancelled</span>
@@ -2273,26 +2445,121 @@ export default function Attendance() {
                 </div>
               )}
 
+              {/* Personal details: view or edit */}
               <ProfileSection
                 icon={<User size={14} />}
                 title="Personal & contact"
               >
-                <DetailRow label="Full name" value={profile.name} />
-                <DetailRow label="Email" value={profile.email} />
-                <DetailRow
-                  label="Phone"
-                  value={
-                    profile.phone ||
-                    (profileLoading ? "Loading…" : "Not provided")
-                  }
-                />
-                <DetailRow
-                  label="Category"
-                  value={
-                    profile.category ||
-                    (profileLoading ? "Loading…" : "—")
-                  }
-                />
+                {editingProfile ? (
+                  <form
+                    className="attendance-edit-form"
+                    onSubmit={saveAttendeeChanges}
+                  >
+                    <div className="attendance-edit-grid">
+                      <label className="attendance-edit-field">
+                        <span>Full name *</span>
+                        <input
+                          type="text"
+                          name="name"
+                          value={editForm.name}
+                          onChange={handleEditFormChange}
+                          placeholder="Enter attendee name"
+                          maxLength={100}
+                          required
+                          disabled={savingProfile}
+                        />
+                      </label>
+
+                      <label className="attendance-edit-field">
+                        <span>Email address *</span>
+                        <input
+                          type="email"
+                          name="email"
+                          value={editForm.email}
+                          onChange={handleEditFormChange}
+                          placeholder="Enter email address"
+                          maxLength={254}
+                          required
+                          disabled={savingProfile}
+                        />
+                      </label>
+
+                      <label className="attendance-edit-field">
+                        <span>Phone number</span>
+                        <input
+                          type="tel"
+                          name="phone"
+                          value={editForm.phone}
+                          onChange={handleEditFormChange}
+                          placeholder="Enter phone number"
+                          maxLength={20}
+                          disabled={savingProfile}
+                        />
+                      </label>
+
+                      <label className="attendance-edit-field">
+                        <span>Attendee category *</span>
+                        <select
+                          name="category"
+                          value={editForm.category}
+                          onChange={handleEditFormChange}
+                          required
+                          disabled={savingProfile}
+                        >
+                          {ATTENDEE_CATEGORIES.map((category) => (
+                            <option key={category} value={category}>
+                              {category}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
+
+                    <div className="attendance-edit-actions">
+                      <button
+                        type="button"
+                        className="attendance-button attendance-button--secondary"
+                        onClick={cancelEditingProfile}
+                        disabled={savingProfile}
+                      >
+                        <X size={14} />
+                        Discard
+                      </button>
+
+                      <button
+                        type="submit"
+                        className="attendance-button attendance-button--primary"
+                        disabled={savingProfile}
+                      >
+                        {savingProfile ? (
+                          <Spinner />
+                        ) : (
+                          <Save size={14} />
+                        )}
+                        {savingProfile ? "Saving…" : "Save changes"}
+                      </button>
+                    </div>
+                  </form>
+                ) : (
+                  <>
+                    <DetailRow label="Full name" value={profile.name} />
+                    <DetailRow label="Email" value={profile.email} />
+                    <DetailRow
+                      label="Phone"
+                      value={
+                        profile.phone ||
+                        (profileLoading ? "Loading…" : "Not provided")
+                      }
+                    />
+                    <DetailRow
+                      label="Category"
+                      value={
+                        profile.category ||
+                        (profileLoading ? "Loading…" : "—")
+                      }
+                    />
+                  </>
+                )}
               </ProfileSection>
 
               <ProfileSection
@@ -2362,7 +2629,6 @@ export default function Attendance() {
                 {profile.qr && (
                   <div className="attendance-qr">
                     <h3>Ticket QR code</h3>
-
                     <img
                       src={qrImageSource(profile.qr)}
                       alt="Ticket QR code"
@@ -2385,7 +2651,6 @@ export default function Attendance() {
                             {eventDate(ticket)} · {ticketId(ticket)}
                           </small>
                         </div>
-
                         <AttendanceBadge ticket={ticket} />
                       </li>
                     ))}
@@ -2395,7 +2660,7 @@ export default function Attendance() {
             </div>
 
             <footer className="attendance-modal-footer">
-              {profile.email && profile.email !== "—" && (
+              {!editingProfile && profile.email && profile.email !== "—" && (
                 <a
                   className="attendance-button attendance-button--secondary"
                   href={`mailto:${profile.email}`}
@@ -2405,7 +2670,7 @@ export default function Attendance() {
                 </a>
               )}
 
-              {profile.phone && (
+              {!editingProfile && profile.phone && (
                 <a
                   className="attendance-button attendance-button--secondary"
                   href={`tel:${String(profile.phone).replace(/[^\d+]/g, "")}`}
@@ -2415,8 +2680,22 @@ export default function Attendance() {
                 </a>
               )}
 
-              {isOrganizer && (
+              {isOrganizer && !editingProfile && (
                 <>
+                  <button
+                    type="button"
+                    className="attendance-button attendance-button--secondary"
+                    onClick={startEditingProfile}
+                    disabled={
+                      profileLoading ||
+                      !profileDetails ||
+                      Boolean(actionLoading)
+                    }
+                  >
+                    <Pencil size={14} />
+                    Edit attendee
+                  </button>
+
                   <button
                     type="button"
                     className="attendance-button attendance-button--primary"
@@ -2459,7 +2738,7 @@ export default function Attendance() {
                 type="button"
                 className="attendance-button attendance-button--secondary"
                 onClick={closeProfile}
-                disabled={Boolean(actionLoading)}
+                disabled={Boolean(actionLoading) || savingProfile}
               >
                 Close
               </button>
@@ -2490,7 +2769,6 @@ export default function Attendance() {
                 <span className="attendance-section-kicker">
                   TICKET DETAILS
                 </span>
-
                 <h2 id="attendance-modal-title">Ticket information</h2>
               </div>
 
@@ -2523,26 +2801,26 @@ export default function Attendance() {
                 label="Attendee"
                 value={attendeeName(activeTicket)}
               />
-
-              <DetailRow label="Email" value={attendeeEmail(activeTicket)} />
-
-              <DetailRow label="Event" value={eventName(activeTicket)} />
-
+              <DetailRow
+                label="Email"
+                value={attendeeEmail(activeTicket)}
+              />
+              <DetailRow
+                label="Event"
+                value={eventName(activeTicket)}
+              />
               <DetailRow
                 label="Event date"
                 value={eventDate(activeTicket)}
               />
-
               <DetailRow
                 label="Ticket issued"
                 value={issuedDate(activeTicket)}
               />
-
               <DetailRow
                 label="Attendance"
                 value={getAttendanceStatus(activeTicket)}
               />
-
               <DetailRow
                 label="Checked in at"
                 value={checkInDate(activeTicket)}
@@ -2551,7 +2829,6 @@ export default function Attendance() {
               {activeTicket.qr_code && (
                 <div className="attendance-qr">
                   <h3>Ticket QR code</h3>
-
                   <img
                     src={qrImageSource(activeTicket.qr_code)}
                     alt="Ticket QR code"
