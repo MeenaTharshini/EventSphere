@@ -1,3 +1,4 @@
+
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   CalendarDays,
@@ -51,6 +52,10 @@ const INITIAL_FORM = {
   category: "General",
 };
 
+/* =======================================================
+   RESPONSE HELPERS
+======================================================= */
+
 function unwrapResponse(response) {
   let result = response?.data ?? response;
 
@@ -65,18 +70,101 @@ function unwrapResponse(response) {
 
   return result;
 }
+
+function getErrorMessage(error) {
+  const detail =
+    error?.response?.data?.detail ??
+    error?.response?.data?.message ??
+    error?.data?.detail ??
+    error?.data?.message ??
+    error?.detail ??
+    error?.message ??
+    "Something went wrong. Please try again.";
+
+  if (Array.isArray(detail)) {
+    return detail
+      .map((item) => {
+        const field =
+          item?.loc?.[item.loc.length - 1] ?? "field";
+
+        return `${field}: ${item?.msg ?? "Invalid value"}`;
+      })
+      .join(". ");
+  }
+
+  const message = String(detail).trim();
+  const lowerMessage = message.toLowerCase();
+
+  if (
+    /event.*(not available|unavailable|cancelled|canceled|ended|expired|closed)/i.test(message) ||
+    /(registration|registering).*(not available|unavailable|closed|ended|expired)/i.test(message) ||
+    /(event has ended|event is over|registration is closed|registration is unavailable|not accepting registrations)/i.test(message)
+  ) {
+    return "This event is no longer available for registration. Please select another event.";
+  }
+
+  if (/already registered|duplicate key/i.test(lowerMessage)) {
+    return "You are already registered for this event.";
+  }
+
+  if (/registration email must match/i.test(lowerMessage)) {
+    return "Your registration email must match your signed-in account email.";
+  }
+
+  if (/valid attendee category|select general/i.test(lowerMessage)) {
+    return "Please select a valid attendee category.";
+  }
+
+  if (/valid event|objectid/i.test(lowerMessage)) {
+    return "The event ID was rejected. Refresh the event list and try again.";
+  }
+
+  if (/event does not exist/i.test(lowerMessage)) {
+    return "This event no longer exists. Please choose another event.";
+  }
+
+  if (/only attendees/i.test(lowerMessage)) {
+    return "Please sign in with an attendee account to register.";
+  }
+
+  if (
+    /failed to fetch|network error|connection refused|unable to connect|cannot connect/i.test(
+      lowerMessage
+    )
+  ) {
+    return "Unable to connect to the server. Check that the backend is running.";
+  }
+
+  return message;
+}
+
+function getStatusLabel(status) {
+  if (!status) return "Registered";
+
+  return String(status)
+    .replace(/[_-]/g, " ")
+    .replace(/\b\w/g, (character) => character.toUpperCase());
+}
+
+function isValidImageData(value) {
+  return (
+    typeof value === "string" &&
+    /^data:image\/(?:png|jpeg|jpg|webp);base64,/i.test(value)
+  );
+}
+
+/* =======================================================
+   EVENT HELPERS
+======================================================= */
+
 function isEventOver(event) {
   const now = Date.now();
 
-  // Prefer an explicit ending date and time.
-  const completeEnd =
-    event.end_datetime ??
-    event.end_date;
+  const completeEnd = event.end_datetime ?? event.end_date;
 
   if (completeEnd) {
     const value = String(completeEnd).trim();
 
-    // A complete ISO date/time already contains its time.
     if (/[T ]\d{2}:\d{2}/.test(value)) {
       const timestamp = new Date(value).getTime();
 
@@ -109,11 +197,8 @@ function isEventOver(event) {
     return false;
   }
 
-  // Interpret event date and time as Indian Standard Time.
   const normalizedTime =
-    endTime.length === 5
-      ? `${endTime}:00`
-      : endTime;
+    endTime.length === 5 ? `${endTime}:00` : endTime;
 
   const timestamp = new Date(
     `${date}T${normalizedTime}+05:30`
@@ -123,6 +208,7 @@ function isEventOver(event) {
 
   return timestamp <= now;
 }
+
 function normalizeEvents(response) {
   const result = unwrapResponse(response);
 
@@ -142,17 +228,11 @@ function normalizeEvents(response) {
         .trim()
         .toLowerCase();
 
-      // Exclude cancelled events.
       if (["cancelled", "canceled"].includes(status)) {
         return false;
       }
 
-      // Exclude events whose ending date/time has passed.
-      if (isEventOver(event)) {
-        return false;
-      }
-
-      return true;
+      return !isEventOver(event);
     })
     .map((event) => {
       const venue =
@@ -187,16 +267,6 @@ function normalizeEvents(response) {
           event.start_datetime ??
           "",
 
-        endDate:
-          event.end_date ??
-          event.event_date ??
-          event.date ??
-          "",
-
-        endTime: event.end_time ?? "",
-
-        endDateTime: event.end_datetime ?? "",
-
         venue: String(venue ?? "").trim(),
 
         type:
@@ -212,6 +282,10 @@ function normalizeEvents(response) {
     })
     .filter((event) => event.id && event.name);
 }
+
+/* =======================================================
+   REGISTRATION HELPERS
+======================================================= */
 
 function normalizeRegistrations(response, availableEvents = []) {
   const result = unwrapResponse(response);
@@ -265,6 +339,12 @@ function normalizeRegistrations(response, availableEvents = []) {
           ? registration.ticket
           : null;
 
+      const status = String(
+        registration.status ?? "Registered"
+      )
+        .trim()
+        .toLowerCase();
+
       return {
         id: String(
           registration._id ??
@@ -307,9 +387,7 @@ function normalizeRegistrations(response, availableEvents = []) {
           registration.attendee_category ??
           "General",
 
-        status: String(registration.status ?? "Registered")
-          .trim()
-          .toLowerCase(),
+        status,
 
         registeredAt:
           registration.registered_at ??
@@ -349,17 +427,26 @@ function normalizeRegistrations(response, availableEvents = []) {
     );
 }
 
+/* =======================================================
+   TICKET HELPERS
+======================================================= */
+
 function normalizeTicketResponse(response) {
   const result = unwrapResponse(response);
 
-  if (!result || typeof result !== "object") return null;
+  if (!result || typeof result !== "object") {
+    return null;
+  }
 
   const ticket =
     result.ticket && typeof result.ticket === "object"
       ? result.ticket
       : result;
 
-  const ticketId = ticket.ticket_id ?? ticket.ticketId ?? "";
+  const ticketId =
+    ticket.ticket_id ??
+    ticket.ticketId ??
+    "";
 
   if (!ticketId) return null;
 
@@ -444,88 +531,9 @@ function formatDate(value) {
   });
 }
 
-function getErrorMessage(error) {
-  const detail =
-    error?.response?.data?.detail ??
-    error?.response?.data?.message ??
-    error?.data?.detail ??
-    error?.data?.message ??
-    error?.detail ??
-    error?.message ??
-    "Something went wrong. Please try again.";
-
-  if (Array.isArray(detail)) {
-    return detail
-      .map((item) => {
-        const field = item?.loc?.at(-1) ?? "field";
-        return `${field}: ${item?.msg ?? "Invalid value"}`;
-      })
-      .join(". ");
-  }
-
-  const message = String(detail).trim();
-  const lowerMessage = message.toLowerCase();
-
-  // Check event availability FIRST.
-  if (
-    /event.*(not available|unavailable|cancelled|canceled|ended|expired|closed)/i.test(message) ||
-    /(registration|registering).*(not available|unavailable|closed|ended|expired)/i.test(message) ||
-    /(event has ended|event is over|registration is closed|registration is unavailable|not accepting registrations)/i.test(message)
-  ) {
-    return "This event is no longer available for registration. Please select another event.";
-  }
-
-  if (
-    /already registered|duplicate key/i.test(lowerMessage)
-  ) {
-    return "You are already registered for this event.";
-  }
-
-  if (/registration email must match/i.test(lowerMessage)) {
-    return "Your registration email must match your signed-in account email.";
-  }
-
-  if (/valid attendee category|select general/i.test(lowerMessage)) {
-    return "Please select a valid attendee category.";
-  }
-
-  if (/valid event|objectid/i.test(lowerMessage)) {
-    return "The event ID was rejected. Refresh the event list and try again.";
-  }
-
-  if (/event does not exist/i.test(lowerMessage)) {
-    return "This event no longer exists. Please choose another event.";
-  }
-
-  if (/only attendees/i.test(lowerMessage)) {
-    return "Please sign in with an attendee account to register.";
-  }
-
-  if (
-    /failed to fetch|network error|connection refused|unable to connect/i.test(
-      lowerMessage
-    )
-  ) {
-    return "Unable to connect to the server. Check that the backend is running.";
-  }
-
-  return message;
-}
-
-function getStatusLabel(status) {
-  if (!status) return "Registered";
-
-  return String(status)
-    .replace(/[_-]/g, " ")
-    .replace(/\b\w/g, (character) => character.toUpperCase());
-}
-
-function isValidImageData(value) {
-  return (
-    typeof value === "string" &&
-    /^data:image\/(?:png|jpeg|jpg|webp);base64,/i.test(value)
-  );
-}
+/* =======================================================
+   MAIN COMPONENT
+======================================================= */
 
 export default function AttendeeRegistration({ user, onLogout }) {
   const [form, setForm] = useState(() => ({
@@ -552,7 +560,6 @@ export default function AttendeeRegistration({ user, onLogout }) {
   const [copiedTicketId, setCopiedTicketId] = useState(false);
   const [loadingTicket, setLoadingTicket] = useState(false);
 
-  // Cancellation state
   const [cancelingRegistrationId, setCancelingRegistrationId] =
     useState(null);
   const [cancellationMessage, setCancellationMessage] = useState("");
@@ -565,6 +572,10 @@ export default function AttendeeRegistration({ user, onLogout }) {
     [events, form.event_id]
   );
 
+  /* =====================================================
+     LOAD EVENTS
+  ===================================================== */
+
   const loadEvents = useCallback(async () => {
     setLoadingEvents(true);
     setEventsError("");
@@ -575,9 +586,11 @@ export default function AttendeeRegistration({ user, onLogout }) {
 
       setEvents(available);
 
-      if (available.length === 0) {
-        setEventsError("No events are currently available.");
-      }
+      setEventsError(
+        available.length === 0
+          ? "No events are currently available."
+          : ""
+      );
 
       return available;
     } catch (error) {
@@ -589,6 +602,10 @@ export default function AttendeeRegistration({ user, onLogout }) {
     }
   }, []);
 
+  /* =====================================================
+     LOAD REGISTRATIONS
+  ===================================================== */
+
   const loadMyRegistrations = useCallback(
     async (availableEvents = []) => {
       setLoadingRegistrations(true);
@@ -597,17 +614,28 @@ export default function AttendeeRegistration({ user, onLogout }) {
       try {
         const response = await getMyRegistrations();
 
-        setRegisteredEvents(
-          normalizeRegistrations(response, availableEvents)
+        const registrations = normalizeRegistrations(
+          response,
+          availableEvents
         );
+
+        setRegisteredEvents(registrations);
+
+        return registrations;
       } catch (error) {
+        setRegisteredEvents([]);
         setRegistrationsError(getErrorMessage(error));
+        return [];
       } finally {
         setLoadingRegistrations(false);
       }
     },
     []
   );
+
+  /* =====================================================
+     INITIAL DATA LOAD
+  ===================================================== */
 
   useEffect(() => {
     let active = true;
@@ -618,49 +646,47 @@ export default function AttendeeRegistration({ user, onLogout }) {
       setEventsError("");
       setRegistrationsError("");
 
-      try {
-        const eventsResponse = await getEvents();
+      const [eventsResult, registrationsResult] =
+        await Promise.allSettled([
+          getEvents(),
+          getMyRegistrations(),
+        ]);
 
-        if (!active) return;
+      if (!active) return;
 
-        const available = normalizeEvents(eventsResponse);
+      let availableEvents = [];
 
-        setEvents(available);
+      if (eventsResult.status === "fulfilled") {
+        availableEvents = normalizeEvents(eventsResult.value);
+
+        setEvents(availableEvents);
+
         setEventsError(
-          available.length === 0
+          availableEvents.length === 0
             ? "No events are currently available."
             : ""
         );
-
-        try {
-          const registrationsResponse = await getMyRegistrations();
-
-          if (!active) return;
-
-          setRegisteredEvents(
-            normalizeRegistrations(
-              registrationsResponse,
-              available
-            )
-          );
-        } catch (error) {
-          if (active) {
-            setRegistrationsError(getErrorMessage(error));
-          }
-        } finally {
-          if (active) setLoadingRegistrations(false);
-        }
-      } catch (error) {
-        if (active) {
-          setEvents([]);
-          setEventsError(getErrorMessage(error));
-          setRegistrationsError(getErrorMessage(error));
-          setRegisteredEvents([]);
-          setLoadingRegistrations(false);
-        }
-      } finally {
-        if (active) setLoadingEvents(false);
+      } else {
+        setEvents([]);
+        setEventsError(getErrorMessage(eventsResult.reason));
       }
+
+      if (registrationsResult.status === "fulfilled") {
+        setRegisteredEvents(
+          normalizeRegistrations(
+            registrationsResult.value,
+            availableEvents
+          )
+        );
+      } else {
+        setRegisteredEvents([]);
+        setRegistrationsError(
+          getErrorMessage(registrationsResult.reason)
+        );
+      }
+
+      setLoadingEvents(false);
+      setLoadingRegistrations(false);
     }
 
     initialize();
@@ -670,6 +696,10 @@ export default function AttendeeRegistration({ user, onLogout }) {
     };
   }, []);
 
+  /* =====================================================
+     SYNCHRONIZE USER DETAILS
+  ===================================================== */
+
   useEffect(() => {
     setForm((current) => ({
       ...current,
@@ -678,7 +708,13 @@ export default function AttendeeRegistration({ user, onLogout }) {
     }));
   }, [user?.name, user?.email]);
 
+  /* =====================================================
+     CLOSE TICKET WITH ESCAPE
+  ===================================================== */
+
   useEffect(() => {
+    if (!selectedTicket) return undefined;
+
     function handleKeyDown(event) {
       if (event.key === "Escape") {
         setSelectedTicket(null);
@@ -687,14 +723,16 @@ export default function AttendeeRegistration({ user, onLogout }) {
       }
     }
 
-    if (selectedTicket) {
-      window.addEventListener("keydown", handleKeyDown);
-    }
+    window.addEventListener("keydown", handleKeyDown);
 
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
   }, [selectedTicket]);
+
+  /* =====================================================
+     FORM CHANGE
+  ===================================================== */
 
   function handleChange(event) {
     const { name, value } = event.target;
@@ -713,6 +751,10 @@ export default function AttendeeRegistration({ user, onLogout }) {
     setSuccess("");
     setTicketMessage("");
   }
+
+  /* =====================================================
+     FORM VALIDATION
+  ===================================================== */
 
   function validateForm() {
     const next = {};
@@ -739,6 +781,12 @@ export default function AttendeeRegistration({ user, onLogout }) {
       !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
     ) {
       next.email = "Please enter a valid email address.";
+    } else if (
+      user?.email &&
+      email.toLowerCase() !== user.email.trim().toLowerCase()
+    ) {
+      next.email =
+        "Your registration email must match your signed-in account email.";
     }
 
     if (!phone) {
@@ -755,7 +803,9 @@ export default function AttendeeRegistration({ user, onLogout }) {
 
     if (!form.event_id) {
       next.event_id = "Please select an event.";
-    } else if (!events.some((event) => event.id === form.event_id)) {
+    } else if (
+      !events.some((event) => event.id === form.event_id)
+    ) {
       next.event_id = "Please select an available event.";
     }
 
@@ -772,10 +822,11 @@ export default function AttendeeRegistration({ user, onLogout }) {
     return Object.keys(next).length === 0;
   }
 
-  async function openTicketWithDetails(
-    ticket,
-    registration = null
-  ) {
+  /* =====================================================
+     OPEN DIGITAL TICKET
+  ===================================================== */
+
+  async function openTicketWithDetails(ticket, registration = null) {
     if (!ticket?.ticket_id) {
       setTicketMessage(
         "A digital ticket is not available for this registration yet. Refresh your registrations and try again."
@@ -811,21 +862,27 @@ export default function AttendeeRegistration({ user, onLogout }) {
         setSelectedTicket({
           ...fallbackTicket,
           ...completeTicket,
+
           attendee_name:
             completeTicket.attendee_name ||
             fallbackTicket.attendee_name,
+
           event_name:
             completeTicket.event_name ||
             fallbackTicket.event_name,
+
           event_date:
             completeTicket.event_date ||
             fallbackTicket.event_date,
+
           venue:
             completeTicket.venue ||
             fallbackTicket.venue,
+
           category:
             completeTicket.category ||
             fallbackTicket.category,
+
           qr_code:
             completeTicket.qr_code ||
             fallbackTicket.qr_code ||
@@ -840,6 +897,10 @@ export default function AttendeeRegistration({ user, onLogout }) {
             "The ticket exists, but the server did not return its QR image."
           );
         }
+      } else if (!fallbackTicket.qr_code) {
+        setTicketMessage(
+          "The ticket details could not be retrieved. Please refresh your registrations and try again."
+        );
       }
     } catch (error) {
       if (!isValidImageData(fallbackTicket.qr_code)) {
@@ -851,6 +912,10 @@ export default function AttendeeRegistration({ user, onLogout }) {
       setLoadingTicket(false);
     }
   }
+
+  /* =====================================================
+     REGISTER ATTENDEE
+  ===================================================== */
 
   async function handleSubmit(event) {
     event.preventDefault();
@@ -874,44 +939,54 @@ export default function AttendeeRegistration({ user, onLogout }) {
         category: form.category,
       });
 
-      if (response?.success === false) {
+      const result = unwrapResponse(response);
+
+      if (
+        result?.success === false ||
+        result?.status === "error"
+      ) {
         throw new Error(
-          response.message ||
+          result?.message ??
+            result?.detail ??
             "Registration could not be completed."
         );
       }
 
-      const generatedTicket =
-        normalizeTicketResponse(response);
-
       setSuccess(
-        response?.message ||
+        result?.message ??
           "Registration completed successfully!"
       );
 
-      if (response?.ticket_created === false) {
+      const generatedTicket = normalizeTicketResponse(result);
+
+      if (result?.ticket_created === false) {
         setTicketMessage(
-          response?.ticket_error ||
+          result?.ticket_error ??
             "Your registration was saved, but the ticket could not be generated. Refresh your registrations or contact the event organizer."
         );
       } else if (generatedTicket) {
         await openTicketWithDetails({
           ...generatedTicket,
+
           attendee_name:
             generatedTicket.attendee_name ||
             form.name.trim(),
+
           event_name:
             generatedTicket.event_name ||
             selectedEvent?.name ||
             "Event",
+
           event_date:
             generatedTicket.event_date ||
             selectedEvent?.date ||
             "",
+
           venue:
             generatedTicket.venue ||
             selectedEvent?.venue ||
             "",
+
           category:
             generatedTicket.category || form.category,
         });
@@ -923,23 +998,7 @@ export default function AttendeeRegistration({ user, onLogout }) {
 
       const latestEvents = await loadEvents();
 
-      try {
-        const latestRegistrations =
-          await getMyRegistrations();
-
-        setRegisteredEvents(
-          normalizeRegistrations(
-            latestRegistrations,
-            latestEvents
-          )
-        );
-
-        setRegistrationsError("");
-      } catch (refreshError) {
-        setRegistrationsError(
-          getErrorMessage(refreshError)
-        );
-      }
+      await loadMyRegistrations(latestEvents);
 
       setForm((current) => ({
         ...INITIAL_FORM,
@@ -955,6 +1014,10 @@ export default function AttendeeRegistration({ user, onLogout }) {
     }
   }
 
+  /* =====================================================
+     REFRESH REGISTRATIONS
+  ===================================================== */
+
   async function handleRefresh() {
     setRegistrationsError("");
     setCancellationMessage("");
@@ -964,6 +1027,10 @@ export default function AttendeeRegistration({ user, onLogout }) {
 
     await loadMyRegistrations(latestEvents);
   }
+
+  /* =====================================================
+     CANCEL REGISTRATION
+  ===================================================== */
 
   async function handleCancelRegistration(registration) {
     if (!registration?.id) {
@@ -988,17 +1055,13 @@ export default function AttendeeRegistration({ user, onLogout }) {
       await unregisterAttendee(registration.id);
 
       setRegisteredEvents((current) =>
-        current.filter(
-          (item) => item.id !== registration.id
-        )
+        current.filter((item) => item.id !== registration.id)
       );
 
       setCancellationMessage(
         `Your registration for "${registration.name}" has been cancelled.`
       );
 
-      // Refresh from the backend to ensure the UI reflects
-      // the latest registration status.
       const latestEvents = await loadEvents();
 
       await loadMyRegistrations(latestEvents);
@@ -1011,6 +1074,10 @@ export default function AttendeeRegistration({ user, onLogout }) {
       setCancelingRegistrationId(null);
     }
   }
+
+  /* =====================================================
+     OPEN REGISTRATION TICKET
+  ===================================================== */
 
   async function openRegistrationTicket(registration) {
     if (!registration.ticket?.ticket_id) {
@@ -1031,14 +1098,17 @@ export default function AttendeeRegistration({ user, onLogout }) {
         category: registration.category,
         status: registration.ticket.status ?? "Valid",
         qr_code: registration.ticket.qr_code ?? "",
-        created_at:
-          registration.ticket.created_at ?? "",
+        created_at: registration.ticket.created_at ?? "",
         checked_in_at:
           registration.ticket.checked_in_at ?? "",
       },
       registration
     );
   }
+
+  /* =====================================================
+     COPY TICKET ID
+  ===================================================== */
 
   async function copyTicketId() {
     if (!selectedTicket?.ticket_id) return;
@@ -1054,16 +1124,19 @@ export default function AttendeeRegistration({ user, onLogout }) {
 
       setCopiedTicketId(true);
 
-      window.setTimeout(
-        () => setCopiedTicketId(false),
-        1800
-      );
+      window.setTimeout(() => {
+        setCopiedTicketId(false);
+      }, 1800);
     } catch {
       setTicketMessage(
         "Could not copy the ticket ID. Please select and copy it manually."
       );
     }
   }
+
+  /* =====================================================
+     DOWNLOAD QR CODE
+  ===================================================== */
 
   function downloadTicketQr() {
     if (!isValidImageData(selectedTicket?.qr_code)) {
@@ -1091,6 +1164,10 @@ export default function AttendeeRegistration({ user, onLogout }) {
     setTicketMessage("");
   }
 
+  /* =====================================================
+     JSX
+  ===================================================== */
+
   return (
     <div className="es-registration">
       <header className="es-header">
@@ -1099,10 +1176,7 @@ export default function AttendeeRegistration({ user, onLogout }) {
           href="/"
           aria-label="EventSphere home"
         >
-          <CalendarDays
-            className="es-brand-icon"
-            size={29}
-          />
+          <CalendarDays className="es-brand-icon" size={29} />
           <span>EventSphere</span>
         </a>
 
@@ -1137,12 +1211,10 @@ export default function AttendeeRegistration({ user, onLogout }) {
       </header>
 
       <main className="es-layout">
+        {/* REGISTRATION FORM */}
         <section className="es-form-card">
           <div className="es-form-heading">
-            <Users
-              className="es-heading-icon"
-              size={40}
-            />
+            <Users className="es-heading-icon" size={40} />
 
             <div>
               <span className="es-eyebrow">
@@ -1183,12 +1255,12 @@ export default function AttendeeRegistration({ user, onLogout }) {
                   <button
                     type="button"
                     className="es-inline-ticket-button"
-                    onClick={() =>
-                      setSelectedTicket(selectedTicket)
-                    }
+                    onClick={() => {
+                      setTicketMessage("");
+                    }}
                   >
                     <Ticket size={15} />
-                    View your digital ticket
+                    Ticket details are shown below
                     <ArrowUpRight size={15} />
                   </button>
                 )}
@@ -1207,6 +1279,7 @@ export default function AttendeeRegistration({ user, onLogout }) {
           )}
 
           <form onSubmit={handleSubmit} noValidate>
+            {/* FULL NAME */}
             <div className="es-field">
               <label htmlFor="attendee-name">
                 Full Name <b>*</b>
@@ -1239,10 +1312,7 @@ export default function AttendeeRegistration({ user, onLogout }) {
 
                 {form.name.trim().length >= 2 &&
                   !errors.name && (
-                    <Check
-                      className="es-valid-icon"
-                      size={19}
-                    />
+                    <Check className="es-valid-icon" size={19} />
                   )}
               </div>
 
@@ -1256,6 +1326,7 @@ export default function AttendeeRegistration({ user, onLogout }) {
               )}
             </div>
 
+            {/* EMAIL */}
             <div className="es-field">
               <label htmlFor="attendee-email">
                 Email Address <b>*</b>
@@ -1276,6 +1347,7 @@ export default function AttendeeRegistration({ user, onLogout }) {
                   autoComplete="email"
                   value={form.email}
                   onChange={handleChange}
+                  readOnly={Boolean(user?.email)}
                   maxLength={254}
                   aria-invalid={Boolean(errors.email)}
                   aria-describedby={
@@ -1290,12 +1362,15 @@ export default function AttendeeRegistration({ user, onLogout }) {
                   form.email.trim()
                 ) &&
                   !errors.email && (
-                    <Check
-                      className="es-valid-icon"
-                      size={19}
-                    />
+                    <Check className="es-valid-icon" size={19} />
                   )}
               </div>
+
+              {user?.email && (
+                <small className="es-form-notice">
+                  Your account email is used for registration.
+                </small>
+              )}
 
               {errors.email && (
                 <small
@@ -1307,6 +1382,7 @@ export default function AttendeeRegistration({ user, onLogout }) {
               )}
             </div>
 
+            {/* PHONE */}
             <div className="es-field">
               <label htmlFor="attendee-phone">
                 Phone Number <b>*</b>
@@ -1339,10 +1415,7 @@ export default function AttendeeRegistration({ user, onLogout }) {
 
                 {form.phone.replace(/\D/g, "").length >= 7 &&
                   !errors.phone && (
-                    <Check
-                      className="es-valid-icon"
-                      size={19}
-                    />
+                    <Check className="es-valid-icon" size={19} />
                   )}
               </div>
 
@@ -1356,6 +1429,7 @@ export default function AttendeeRegistration({ user, onLogout }) {
               )}
             </div>
 
+            {/* EVENT SELECT */}
             <div className="es-field">
               <label htmlFor="attendee-event">
                 Choose Your Event <b>*</b>
@@ -1373,9 +1447,7 @@ export default function AttendeeRegistration({ user, onLogout }) {
                   name="event_id"
                   value={form.event_id}
                   onChange={handleChange}
-                  disabled={
-                    loadingEvents || events.length === 0
-                  }
+                  disabled={loadingEvents || events.length === 0}
                   aria-invalid={Boolean(errors.event_id)}
                   aria-describedby={
                     errors.event_id
@@ -1391,10 +1463,7 @@ export default function AttendeeRegistration({ user, onLogout }) {
                   </option>
 
                   {events.map((event) => (
-                    <option
-                      key={event.id}
-                      value={event.id}
-                    >
+                    <option key={event.id} value={event.id}>
                       {event.name}
                     </option>
                   ))}
@@ -1419,9 +1488,7 @@ export default function AttendeeRegistration({ user, onLogout }) {
                     onClick={loadEvents}
                     disabled={loadingEvents}
                   >
-                    {loadingEvents
-                      ? "Loading..."
-                      : "Retry"}
+                    {loadingEvents ? "Loading..." : "Retry"}
                   </button>
                 </div>
               )}
@@ -1435,13 +1502,13 @@ export default function AttendeeRegistration({ user, onLogout }) {
 
                   <span>
                     <MapPin size={15} />
-                    {selectedEvent.venue ||
-                      "Venue to be announced"}
+                    {selectedEvent.venue || "Venue to be announced"}
                   </span>
                 </div>
               )}
             </div>
 
+            {/* CATEGORY */}
             <fieldset className="es-category-field">
               <legend>
                 Attendee Category <b>*</b>
@@ -1457,9 +1524,7 @@ export default function AttendeeRegistration({ user, onLogout }) {
                       type="radio"
                       name="category"
                       value={category.value}
-                      checked={
-                        form.category === category.value
-                      }
+                      checked={form.category === category.value}
                       onChange={handleChange}
                     />
 
@@ -1482,6 +1547,7 @@ export default function AttendeeRegistration({ user, onLogout }) {
               )}
             </fieldset>
 
+            {/* SUBMIT */}
             <button
               className="es-register-button"
               type="submit"
@@ -1493,10 +1559,7 @@ export default function AttendeeRegistration({ user, onLogout }) {
             >
               {submitting ? (
                 <>
-                  <LoaderCircle
-                    className="es-spin"
-                    size={20}
-                  />
+                  <LoaderCircle className="es-spin" size={20} />
                   Registering...
                 </>
               ) : (
@@ -1514,13 +1577,14 @@ export default function AttendeeRegistration({ user, onLogout }) {
             <div className="es-form-notice">
               <Info size={18} />
               <span>
-                Please check your details before submitting
-                your registration.
+                Please check your details before submitting your
+                registration.
               </span>
             </div>
           </form>
         </section>
 
+        {/* REGISTERED EVENTS SIDEBAR */}
         <aside className="es-event-card">
           <div className="es-sidebar-heading">
             <div>
@@ -1530,18 +1594,14 @@ export default function AttendeeRegistration({ user, onLogout }) {
 
               <h2>Your Registered Events</h2>
 
-              <p>
-                All your event bookings, in one place.
-              </p>
+              <p>All your event bookings, in one place.</p>
             </div>
 
             <button
               type="button"
               className="es-refresh-button"
               onClick={handleRefresh}
-              disabled={
-                loadingRegistrations || loadingEvents
-              }
+              disabled={loadingRegistrations || loadingEvents}
               aria-label="Refresh registered events"
               title="Refresh registered events"
             >
@@ -1598,10 +1658,7 @@ export default function AttendeeRegistration({ user, onLogout }) {
 
           {loadingRegistrations ? (
             <div className="es-registration-state">
-              <LoaderCircle
-                size={22}
-                className="es-spin"
-              />
+              <LoaderCircle size={22} className="es-spin" />
               <span>Loading registrations...</span>
             </div>
           ) : registrationsError ? (
@@ -1609,10 +1666,7 @@ export default function AttendeeRegistration({ user, onLogout }) {
               <AlertCircle size={22} />
               <p>{registrationsError}</p>
 
-              <button
-                type="button"
-                onClick={handleRefresh}
-              >
+              <button type="button" onClick={handleRefresh}>
                 Try again
               </button>
             </div>
@@ -1642,18 +1696,15 @@ export default function AttendeeRegistration({ user, onLogout }) {
 
                       <span
                         className={`es-registration-status ${
-                          [
-                            "registered",
-                            "confirmed",
-                          ].includes(registration.status)
+                          ["registered", "confirmed"].includes(
+                            registration.status
+                          )
                             ? "is-confirmed"
                             : ""
                         }`}
                       >
                         <CheckCircle2 size={13} />
-                        {getStatusLabel(
-                          registration.status
-                        )}
+                        {getStatusLabel(registration.status)}
                       </span>
                     </div>
 
@@ -1661,16 +1712,13 @@ export default function AttendeeRegistration({ user, onLogout }) {
 
                     <div className="es-compact-detail">
                       <CalendarDays size={15} />
-                      <span>
-                        {formatDate(registration.date)}
-                      </span>
+                      <span>{formatDate(registration.date)}</span>
                     </div>
 
                     <div className="es-compact-detail">
                       <MapPin size={15} />
                       <span>
-                        {registration.venue ||
-                          "Venue to be announced"}
+                        {registration.venue || "Venue to be announced"}
                       </span>
                     </div>
 
@@ -1687,10 +1735,7 @@ export default function AttendeeRegistration({ user, onLogout }) {
                           <Ticket size={16} />
 
                           <div>
-                            <strong>
-                              Digital ticket ready
-                            </strong>
-
+                            <strong>Digital ticket ready</strong>
                             <span>
                               {registration.ticket.ticket_id}
                             </span>
@@ -1701,9 +1746,7 @@ export default function AttendeeRegistration({ user, onLogout }) {
                           type="button"
                           className="es-view-ticket-button"
                           onClick={() =>
-                            openRegistrationTicket(
-                              registration
-                            )
+                            openRegistrationTicket(registration)
                           }
                           disabled={isCancelling}
                         >
@@ -1724,9 +1767,7 @@ export default function AttendeeRegistration({ user, onLogout }) {
                       type="button"
                       className="es-cancel-registration-button"
                       onClick={() =>
-                        handleCancelRegistration(
-                          registration
-                        )
+                        handleCancelRegistration(registration)
                       }
                       disabled={
                         isCancelling ||
@@ -1765,6 +1806,7 @@ export default function AttendeeRegistration({ user, onLogout }) {
         connection.
       </footer>
 
+      {/* DIGITAL TICKET MODAL */}
       {selectedTicket && (
         <div
           className="es-ticket-overlay"
@@ -1787,9 +1829,7 @@ export default function AttendeeRegistration({ user, onLogout }) {
                   EVENTSPHERE DIGITAL PASS
                 </span>
 
-                <h2 id="es-ticket-title">
-                  Your Event Ticket
-                </h2>
+                <h2 id="es-ticket-title">Your Event Ticket</h2>
               </div>
 
               <button
@@ -1808,17 +1848,14 @@ export default function AttendeeRegistration({ user, onLogout }) {
 
               <span
                 className={`es-ticket-status ${
-                  String(
-                    selectedTicket.status
-                  ).toLowerCase() === "valid"
+                  String(selectedTicket.status).toLowerCase() ===
+                  "valid"
                     ? "is-valid"
                     : "is-not-valid"
                 }`}
               >
                 <ShieldCheck size={14} />
-                {getStatusLabel(
-                  selectedTicket.status
-                )}
+                {getStatusLabel(selectedTicket.status)}
               </span>
             </div>
 
@@ -1831,18 +1868,13 @@ export default function AttendeeRegistration({ user, onLogout }) {
 
               <div className="es-ticket-detail-row">
                 <CalendarDays size={17} />
-                <span>
-                  {formatDate(
-                    selectedTicket.event_date
-                  )}
-                </span>
+                <span>{formatDate(selectedTicket.event_date)}</span>
               </div>
 
               <div className="es-ticket-detail-row">
                 <MapPin size={17} />
                 <span>
-                  {selectedTicket.venue ||
-                    "Venue to be announced"}
+                  {selectedTicket.venue || "Venue to be announced"}
                 </span>
               </div>
 
@@ -1858,33 +1890,26 @@ export default function AttendeeRegistration({ user, onLogout }) {
               <div className="es-ticket-detail-row">
                 <Tag size={17} />
                 <span>
-                  {selectedTicket.category || "General"}{" "}
-                  category
+                  {selectedTicket.category || "General"} category
                 </span>
               </div>
             </div>
 
             <div className="es-ticket-qr-section">
-              {loadingTicket &&
-              !selectedTicket.qr_code ? (
+              {loadingTicket && !selectedTicket.qr_code ? (
                 <div className="es-ticket-qr-missing">
                   <LoaderCircle
                     size={38}
                     className="es-spin"
                   />
 
-                  <strong>
-                    Loading ticket QR code...
-                  </strong>
+                  <strong>Loading ticket QR code...</strong>
 
                   <p>
-                    Please wait while we retrieve your
-                    ticket.
+                    Please wait while we retrieve your ticket.
                   </p>
                 </div>
-              ) : isValidImageData(
-                  selectedTicket.qr_code
-                ) ? (
+              ) : isValidImageData(selectedTicket.qr_code) ? (
                 <img
                   className="es-ticket-qr"
                   src={selectedTicket.qr_code}
@@ -1897,26 +1922,23 @@ export default function AttendeeRegistration({ user, onLogout }) {
                   <strong>QR code unavailable</strong>
 
                   <p>
-                    The server did not return a QR image
-                    for this ticket. Refresh your
-                    registrations or contact the event
-                    organizer.
+                    The server did not return a QR image for this
+                    ticket. Refresh your registrations or contact
+                    the event organizer.
                   </p>
                 </div>
               )}
 
               <p>
-                Present this QR code to the event organizer
-                for verification.
+                Present this QR code to the event organizer for
+                verification.
               </p>
             </div>
 
             <div className="es-ticket-id-box">
               <div>
                 <span>TICKET ID</span>
-                <strong>
-                  {selectedTicket.ticket_id}
-                </strong>
+                <strong>{selectedTicket.ticket_id}</strong>
               </div>
 
               <button
@@ -1961,9 +1983,7 @@ export default function AttendeeRegistration({ user, onLogout }) {
                 className="es-ticket-download-button"
                 onClick={downloadTicketQr}
                 disabled={
-                  !isValidImageData(
-                    selectedTicket.qr_code
-                  )
+                  !isValidImageData(selectedTicket.qr_code)
                 }
               >
                 <Download size={17} />
@@ -1981,8 +2001,7 @@ export default function AttendeeRegistration({ user, onLogout }) {
 
             <p className="es-ticket-disclaimer">
               Keep your ticket ID and QR code safe. Ticket
-              validity is determined by the EventSphere
-              server.
+              validity is determined by the EventSphere server.
             </p>
           </section>
         </div>

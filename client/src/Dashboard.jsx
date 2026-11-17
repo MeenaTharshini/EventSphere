@@ -51,6 +51,7 @@ import Attendance from "./Attendance";
 import OrganizerVendors from "./OrganizerVendors";
 import Budget from "./Budget";
 import Sponsorships from "./Sponsorships";
+import Notifications from "./Notifications";
 
 import "./Dashboard.css";
 
@@ -300,8 +301,7 @@ function formatNotificationDate(value) {
    NOTIFICATION CENTER
 ======================================================= */
 
-
-function NotificationCenter() {
+function NotificationCenter({ onNavigate }) {
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
 
@@ -313,14 +313,11 @@ function NotificationCenter() {
 
   const containerRef = useRef(null);
   const requestInProgress = useRef(false);
-  const mountedRef = useRef(true);
+  const mountedRef = useRef(false);
 
-  // -------------------------------------------------------
-  // LOAD NOTIFICATIONS + UNREAD COUNT
-  // -------------------------------------------------------
+  /* LOAD NOTIFICATIONS */
 
   const loadNotifications = useCallback(async (showLoading = false) => {
-    // Prevent multiple simultaneous polling requests.
     if (requestInProgress.current) return;
 
     requestInProgress.current = true;
@@ -367,31 +364,25 @@ function NotificationCenter() {
     }
   }, []);
 
-  // -------------------------------------------------------
-  // INITIAL LOAD + AUTOMATIC REAL-TIME-LIKE POLLING
-  // -------------------------------------------------------
+  /* INITIAL LOAD + POLLING */
 
   useEffect(() => {
     mountedRef.current = true;
 
-    // Load immediately when dashboard opens.
     loadNotifications(true);
 
-    // Check for notifications every 5 seconds.
     const interval = window.setInterval(() => {
       if (!document.hidden) {
         loadNotifications();
       }
     }, 5000);
 
-    // Refresh immediately when user returns to the tab.
     const handleVisibilityChange = () => {
       if (!document.hidden) {
         loadNotifications();
       }
     };
 
-    // Refresh when browser window gets focus.
     const handleWindowFocus = () => {
       loadNotifications();
     };
@@ -413,16 +404,11 @@ function NotificationCenter() {
         handleVisibilityChange
       );
 
-      window.removeEventListener(
-        "focus",
-        handleWindowFocus
-      );
+      window.removeEventListener("focus", handleWindowFocus);
     };
   }, [loadNotifications]);
 
-  // -------------------------------------------------------
-  // CLOSE DROPDOWN WHEN CLICKING OUTSIDE
-  // -------------------------------------------------------
+  /* CLOSE ON OUTSIDE CLICK / ESCAPE */
 
   useEffect(() => {
     function handleOutsideClick(event) {
@@ -444,21 +430,12 @@ function NotificationCenter() {
     document.addEventListener("keydown", handleEscape);
 
     return () => {
-      document.removeEventListener(
-        "mousedown",
-        handleOutsideClick
-      );
-
-      document.removeEventListener(
-        "keydown",
-        handleEscape
-      );
+      document.removeEventListener("mousedown", handleOutsideClick);
+      document.removeEventListener("keydown", handleEscape);
     };
   }, []);
 
-  // -------------------------------------------------------
-  // TOGGLE NOTIFICATION DROPDOWN
-  // -------------------------------------------------------
+  /* TOGGLE DROPDOWN */
 
   const handleToggle = () => {
     const nextOpen = !open;
@@ -470,9 +447,7 @@ function NotificationCenter() {
     }
   };
 
-  // -------------------------------------------------------
-  // MARK SINGLE NOTIFICATION AS READ
-  // -------------------------------------------------------
+  /* MARK SINGLE NOTIFICATION AS READ */
 
   const handleMarkRead = async (notification) => {
     const notificationId = getNotificationId(notification);
@@ -503,13 +478,13 @@ function NotificationCenter() {
         err?.message || "Unable to mark notification as read."
       );
     } finally {
-      setProcessingId("");
+      if (mountedRef.current) {
+        setProcessingId("");
+      }
     }
   };
 
-  // -------------------------------------------------------
-  // MARK ALL NOTIFICATIONS AS READ
-  // -------------------------------------------------------
+  /* MARK ALL AS READ */
 
   const handleMarkAllRead = async () => {
     if (unreadCount === 0 || markingAll) return;
@@ -535,13 +510,13 @@ function NotificationCenter() {
         err?.message || "Unable to mark all notifications as read."
       );
     } finally {
-      setMarkingAll(false);
+      if (mountedRef.current) {
+        setMarkingAll(false);
+      }
     }
   };
 
-  // -------------------------------------------------------
-  // DELETE NOTIFICATION
-  // -------------------------------------------------------
+  /* DELETE NOTIFICATION */
 
   const handleDelete = async (notification) => {
     const notificationId = getNotificationId(notification);
@@ -572,13 +547,18 @@ function NotificationCenter() {
         err?.message || "Unable to delete notification."
       );
     } finally {
-      setProcessingId("");
+      if (mountedRef.current) {
+        setProcessingId("");
+      }
     }
   };
 
-  // -------------------------------------------------------
-  // UI
-  // -------------------------------------------------------
+  /* NAVIGATE TO FULL NOTIFICATION PAGE */
+
+  const handleViewAll = () => {
+    setOpen(false);
+    onNavigate?.("Notifications");
+  };
 
   return (
     <div
@@ -760,6 +740,8 @@ function NotificationCenter() {
             </div>
           )}
 
+          {/* FOOTER: BOTH ACTIONS INSIDE BELL DROPDOWN */}
+
           <div className="dashboard-notification-footer">
             <button
               type="button"
@@ -772,13 +754,21 @@ function NotificationCenter() {
               />
               Refresh notifications
             </button>
+
+            <button
+              type="button"
+              className="dashboard-view-all-notifications"
+              onClick={handleViewAll}
+            >
+              View all notifications
+              <ChevronRight size={15} />
+            </button>
           </div>
         </div>
       )}
     </div>
   );
 }
-
 
 /* =======================================================
    REUSABLE COMPONENTS
@@ -930,7 +920,9 @@ function MiniCalendar({ events, onSelectDate }) {
                 "dashboard-calendar-day",
                 isToday ? "today" : "",
                 day && eventDays.has(day) ? "has-event" : "",
-              ].filter(Boolean).join(" ")}
+              ]
+                .filter(Boolean)
+                .join(" ")}
               onClick={() => {
                 if (day) {
                   onSelectDate?.(new Date(year, month, day));
@@ -1747,7 +1739,7 @@ export default function Dashboard({ user: userProp, onLogout }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  /* Keep user state synchronized with Auth.jsx */
+  /* KEEP USER STATE SYNCHRONIZED */
 
   useEffect(() => {
     if (userProp !== undefined) {
@@ -1755,7 +1747,7 @@ export default function Dashboard({ user: userProp, onLogout }) {
     }
   }, [userProp]);
 
-  /* Load dashboard data */
+  /* LOAD DASHBOARD DATA */
 
   const loadDashboardData = useCallback(async () => {
     setLoading(true);
@@ -1802,7 +1794,9 @@ export default function Dashboard({ user: userProp, onLogout }) {
         setError(errors.join(" "));
       }
     } catch (err) {
-      setError(err?.message || "Unable to load dashboard data.");
+      setError(
+        err?.message || "Unable to load dashboard data."
+      );
     } finally {
       setLoading(false);
     }
@@ -1812,13 +1806,13 @@ export default function Dashboard({ user: userProp, onLogout }) {
     loadDashboardData();
   }, [loadDashboardData]);
 
-  /* Navigation */
+  /* NAVIGATION */
 
   const handleNavigate = useCallback((page) => {
     setActivePage(page);
   }, []);
 
-  /* Logout */
+  /* LOGOUT */
 
   const handleLogout = useCallback(async () => {
     if (typeof onLogout === "function") {
@@ -1829,7 +1823,7 @@ export default function Dashboard({ user: userProp, onLogout }) {
     try {
       await logoutUser();
     } catch {
-      // Clear local credentials even if the API logout fails.
+      // Clear local credentials even if API logout fails.
     } finally {
       localStorage.removeItem("token");
       localStorage.removeItem("user");
@@ -1843,7 +1837,7 @@ export default function Dashboard({ user: userProp, onLogout }) {
     }
   }, [onLogout]);
 
-  /* Active page */
+  /* ACTIVE PAGE */
 
   let pageContent;
 
@@ -1884,6 +1878,10 @@ export default function Dashboard({ user: userProp, onLogout }) {
       pageContent = <ExpenseApprovals user={user} />;
       break;
 
+    case "Notifications":
+      pageContent = <Notifications />;
+      break;
+
     default:
       pageContent = (
         <DashboardOverview
@@ -1898,7 +1896,7 @@ export default function Dashboard({ user: userProp, onLogout }) {
       );
   }
 
-  /* Main layout */
+  /* MAIN LAYOUT */
 
   return (
     <div className="dashboard-app">
@@ -1920,7 +1918,10 @@ export default function Dashboard({ user: userProp, onLogout }) {
           </div>
 
           <div className="dashboard-topbar-actions">
-            <NotificationCenter />
+            {/* ONLY THE BELL ICON - DROPDOWN CONTAINS VIEW ALL */}
+            <NotificationCenter
+              onNavigate={handleNavigate}
+            />
 
             <span className="dashboard-user-name">
               {getUserName(user)}

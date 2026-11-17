@@ -1,5 +1,6 @@
 
 import { useEffect, useRef, useState } from "react";
+import { Bell } from "lucide-react";
 import "./Sidebar.css";
 
 // =========================================================
@@ -8,6 +9,7 @@ import "./Sidebar.css";
 
 const organizerNavigationItems = [
   { label: "Dashboard", icon: "◈", href: "#overview" },
+  { label: "Notifications", icon: "bell", href: "#notifications" },
   { label: "Events", icon: "▦", href: "#events" },
   { label: "Attendance", icon: "✓", href: "#attendance" },
   { label: "Budget", icon: "₹", href: "#budget" },
@@ -37,6 +39,7 @@ const adminNavigationItems = [
 
 const vendorNavigationItems = [
   { label: "Dashboard", icon: "◈", href: "#overview" },
+  { label: "Notifications", icon: "bell", href: "#notifications" },
   { label: "My Profile", icon: "♙", href: "#profile" },
   { label: "Services", icon: "◇", href: "#services" },
 ];
@@ -47,6 +50,7 @@ const vendorNavigationItems = [
 
 const attendeeNavigationItems = [
   { label: "Dashboard", icon: "◈", href: "#overview" },
+  { label: "Notifications", icon: "bell", href: "#notifications" },
   { label: "My Tickets", icon: "▦", href: "#tickets" },
   { label: "Events", icon: "◷", href: "#events" },
 ];
@@ -102,6 +106,10 @@ export default function Sidebar({
   const menuButtonRef = useRef(null);
   const sidebarRef = useRef(null);
 
+  // =======================================================
+  // USER INFORMATION
+  // =======================================================
+
   const userName =
     user?.name ||
     user?.full_name ||
@@ -136,10 +144,18 @@ export default function Sidebar({
 
     updateScreen();
 
-    mediaQuery.addEventListener("change", updateScreen);
+    if (mediaQuery.addEventListener) {
+      mediaQuery.addEventListener("change", updateScreen);
+    } else {
+      mediaQuery.addListener(updateScreen);
+    }
 
     return () => {
-      mediaQuery.removeEventListener("change", updateScreen);
+      if (mediaQuery.removeEventListener) {
+        mediaQuery.removeEventListener("change", updateScreen);
+      } else {
+        mediaQuery.removeListener(updateScreen);
+      }
     };
   }, []);
 
@@ -216,6 +232,18 @@ export default function Sidebar({
     }
 
     closeMobileSidebar();
+  }
+
+  // =======================================================
+  // NAVIGATION ICON RENDERER
+  // =======================================================
+
+  function renderNavigationIcon(icon) {
+    if (icon === "bell") {
+      return <Bell size={19} strokeWidth={1.8} />;
+    }
+
+    return icon;
   }
 
   // =======================================================
@@ -360,7 +388,7 @@ export default function Sidebar({
                   aria-disabled="true"
                 >
                   <span className="es-nav-icon" aria-hidden="true">
-                    {item.icon}
+                    {renderNavigationIcon(item.icon)}
                   </span>
 
                   <span className="es-nav-label">
@@ -393,7 +421,7 @@ export default function Sidebar({
                 tabIndex={isMobile && !mobileOpen ? -1 : 0}
               >
                 <span className="es-nav-icon" aria-hidden="true">
-                  {item.icon}
+                  {renderNavigationIcon(item.icon)}
                 </span>
 
                 <span className="es-nav-label">
