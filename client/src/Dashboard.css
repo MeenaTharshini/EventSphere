@@ -1,9 +1,9 @@
 /* =========================================================
-   EventSphere — Dashboard.css (compact)
-   Theme: matches the Events page (same colours, font, radius)
-   Font: Inter / Segoe UI
+   EventSphere — Dashboard.css
+   Theme: identical tokens to the Events page
+   (colours, Inter / Segoe UI, 12px radius, header, pills)
+   Layout: dense 5-column KPIs, 3-up charts, 2-column work area
    Responsive: desktop, tablet, mobile
-   Works with the supplied Dashboard.jsx
    ========================================================= */
 
 :root {
@@ -197,7 +197,7 @@ svg {
   max-width: 1600px;
   min-width: 0;
   margin: 0 auto;
-  padding: 16px 24px 18px;
+  padding: 18px 24px 20px;
 }
 
 .dashboard-content > * {
@@ -206,17 +206,17 @@ svg {
 }
 
 /* =========================================================
-   Welcome header (same look as the Events page header)
+   Welcome header (same as the Events page header)
    ========================================================= */
 
 .dashboard-welcome {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: 18px;
   min-width: 0;
   margin-bottom: 14px;
-  padding: 0 0 12px;
+  padding: 0 0 14px;
   border-bottom: 1px solid var(--es-border);
 }
 
@@ -225,8 +225,7 @@ svg {
 }
 
 .dashboard-eyebrow {
-  display: block;
-  margin: 0 0 3px;
+  margin: 0 0 4px;
   color: var(--es-primary);
   font-size: 10px;
   font-weight: 800;
@@ -237,19 +236,18 @@ svg {
 .dashboard-welcome h2 {
   margin: 0;
   color: var(--es-ink-dark);
-  font-size: clamp(20px, 1.9vw, 25px);
+  font-size: clamp(22px, 2vw, 27px);
   font-weight: 750;
-  letter-spacing: -0.6px;
+  letter-spacing: -0.7px;
   line-height: 1.25;
   overflow-wrap: anywhere;
 }
 
 .dashboard-welcome > div:first-child > p:last-child {
   max-width: 620px;
-  margin: 4px 0 0;
+  margin: 5px 0 0;
   color: var(--es-muted);
   font-size: 12px;
-  line-height: 1.5;
 }
 
 .dashboard-welcome-actions {
@@ -266,9 +264,9 @@ svg {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  min-height: 34px;
-  padding: 6px 12px;
+  gap: 7px;
+  min-height: 36px;
+  padding: 8px 13px;
   border: 1px solid transparent;
   border-radius: 8px;
   font-size: 12px;
@@ -328,6 +326,88 @@ svg {
   color: var(--es-primary-dark);
 }
 
+/* ---------- Time-range filter ---------- */
+
+.dashboard-range-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 36px;
+  padding: 0 8px 0 11px;
+  color: var(--es-primary);
+  background: #ffffff;
+  border: 1px solid var(--es-border);
+  border-radius: 8px;
+  cursor: pointer;
+  transition:
+    background var(--es-transition),
+    border-color var(--es-transition);
+}
+
+.dashboard-range-filter:hover {
+  background: var(--es-primary-soft);
+  border-color: #b8d7ca;
+}
+
+.dashboard-range-filter:focus-within {
+  border-color: var(--es-primary);
+  box-shadow: 0 0 0 3px rgba(37, 135, 115, 0.15);
+}
+
+.dashboard-range-filter select {
+  min-height: 34px;
+  padding: 0 4px 0 0;
+  color: var(--es-ink-dark);
+  background: transparent;
+  border: 0;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  outline: none;
+}
+
+/* =========================================================
+   Quick links (kept for compatibility, no longer rendered)
+   ========================================================= */
+
+.dashboard-quick-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-bottom: 14px;
+}
+
+.dashboard-quick-links button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 5px 11px;
+  color: var(--es-ink-dark);
+  background: var(--es-white);
+  border: 1px solid var(--es-border);
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  transition:
+    background var(--es-transition),
+    border-color var(--es-transition),
+    color var(--es-transition),
+    transform var(--es-transition);
+}
+
+.dashboard-quick-links button svg {
+  color: var(--es-primary);
+}
+
+.dashboard-quick-links button:hover {
+  color: var(--es-primary-dark);
+  background: var(--es-primary-soft);
+  border-color: #b8d7ca;
+  transform: translateY(-1px);
+}
+
 /* =========================================================
    Alerts
    ========================================================= */
@@ -336,8 +416,8 @@ svg {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-bottom: 12px;
-  padding: 9px 12px;
+  margin-bottom: 14px;
+  padding: 10px 13px;
   color: #a33b35;
   background: #fff4f2;
   border: 1px solid #f0ceca;
@@ -396,22 +476,22 @@ svg {
 }
 
 /* =========================================================
-   Stat cards (compact: icon left, text right)
+   KPI cards — 5 columns on desktop, two tidy rows
    ========================================================= */
 
 .dashboard-stat-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px;
-  margin-bottom: 12px;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
 }
 
 .dashboard-stat-card {
   display: flex;
-  align-items: center;
-  gap: 11px;
+  flex-direction: column;
+  gap: 2px;
   min-width: 0;
-  padding: 11px 13px;
+  padding: 13px 14px 12px;
   color: var(--es-ink);
   background: var(--es-white);
   border: 1px solid var(--es-border);
@@ -436,17 +516,35 @@ svg {
   box-shadow: var(--es-shadow-hover);
 }
 
+.dashboard-stat-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.dashboard-stat-label {
+  overflow: hidden;
+  color: var(--es-muted);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .dashboard-stat-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
-  flex: 0 0 36px;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
   color: var(--es-primary);
   background: var(--es-primary-soft);
   border: 1px solid #d5eadf;
-  border-radius: 10px;
+  border-radius: 8px;
 }
 
 .dashboard-stat-card.tone-amber .dashboard-stat-icon {
@@ -468,36 +566,20 @@ svg {
 }
 
 .dashboard-stat-card.tone-red .dashboard-stat-icon {
-  color: #b74444;
+  color: var(--es-danger);
   background: #fff0ef;
   border-color: #f0d0cd;
-}
-
-.dashboard-stat-body {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
-.dashboard-stat-label {
-  overflow: hidden;
-  color: var(--es-muted);
-  font-size: 11px;
-  font-weight: 650;
-  line-height: 1.3;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .dashboard-stat-value {
   display: block;
   overflow: hidden;
-  margin: 1px 0;
+  margin-top: 4px;
   color: var(--es-ink-dark);
-  font-size: clamp(17px, 1.5vw, 21px);
+  font-size: clamp(18px, 1.6vw, 23px);
   font-weight: 800;
-  letter-spacing: -0.5px;
-  line-height: 1.25;
+  letter-spacing: -0.6px;
+  line-height: 1.2;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -510,48 +592,63 @@ svg {
   overflow: hidden;
   color: #93a69f;
   font-size: 10px;
-  line-height: 1.35;
+  line-height: 1.4;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 /* =========================================================
-   Panels and grids
+   Grids
    ========================================================= */
 
-.dashboard-main-grid {
+.dashboard-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.7fr) minmax(250px, 0.8fr);
   align-items: stretch;
-  gap: 10px;
-  margin-bottom: 10px;
+  gap: 12px;
+  margin-bottom: 12px;
 }
 
-.dashboard-triple-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  align-items: stretch;
-  gap: 10px;
-  margin-bottom: 10px;
-}
-
-.dashboard-main-grid > *,
-.dashboard-triple-grid > * {
+.dashboard-grid > * {
   min-width: 0;
 }
 
-.dashboard-breakdown-panel,
-.dashboard-modules-panel {
-  margin-bottom: 10px;
+.dashboard-grid-charts {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
+
+.dashboard-grid-budget {
+  grid-template-columns: minmax(0, 1.65fr) minmax(280px, 1fr);
+}
+
+.dashboard-grid-main {
+  grid-template-columns: minmax(0, 1.9fr) minmax(280px, 1fr);
+  align-items: start;
+}
+
+.dashboard-column {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* =========================================================
+   Panels
+   ========================================================= */
 
 .dashboard-panel {
   min-width: 0;
-  padding: 14px;
+  padding: 15px;
   background: var(--es-white);
   border: 1px solid var(--es-border);
   border-radius: var(--es-radius);
   box-shadow: var(--es-shadow);
+}
+
+.dashboard-grid-charts .dashboard-panel,
+.dashboard-grid-budget .dashboard-panel {
+  display: flex;
+  flex-direction: column;
 }
 
 .dashboard-panel-heading {
@@ -560,11 +657,31 @@ svg {
   justify-content: space-between;
   gap: 10px;
   min-width: 0;
-  margin-bottom: 10px;
+  margin-bottom: 12px;
 }
 
-.dashboard-panel-heading > div {
+.dashboard-panel-title {
+  display: flex;
+  align-items: center;
+  gap: 9px;
   min-width: 0;
+}
+
+.dashboard-panel-title > div {
+  min-width: 0;
+}
+
+.dashboard-panel-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  color: var(--es-primary);
+  background: var(--es-primary-soft);
+  border: 1px solid #d5eadf;
+  border-radius: 8px;
 }
 
 .dashboard-panel-heading h2 {
@@ -578,24 +695,20 @@ svg {
 }
 
 .dashboard-panel-heading p {
-  margin: 1px 0 0;
+  margin: 0;
   color: var(--es-muted);
   font-size: 11px;
   line-height: 1.4;
 }
 
-.dashboard-panel-heading > svg {
-  margin-top: 2px;
-  color: var(--es-primary);
-}
-
 .dashboard-empty-state {
   display: flex;
+  flex: 1;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 3px;
-  min-height: 120px;
+  min-height: 130px;
   margin: 0;
   padding: 14px 10px;
   color: var(--es-muted);
@@ -621,6 +734,47 @@ svg {
   margin: 0;
 }
 
+/* ---------- Charts ---------- */
+
+.dashboard-chart-area {
+  width: 100%;
+  height: 210px;
+  min-width: 0;
+  font-size: 11px;
+}
+
+.dashboard-chart-area-tall {
+  height: 250px;
+}
+
+.dashboard-chart-area .recharts-cartesian-grid-horizontal line,
+.dashboard-chart-area .recharts-cartesian-grid-vertical line {
+  stroke: #edf1ec;
+}
+
+.dashboard-chart-area .recharts-text {
+  fill: var(--es-muted);
+}
+
+.dashboard-chart-area .recharts-legend-item-text {
+  color: var(--es-ink) !important;
+}
+
+.dashboard-chart-empty {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  min-height: 150px;
+  padding: 16px;
+  color: var(--es-muted);
+  background: #fbfcfa;
+  border: 1px dashed #cddbd1;
+  border-radius: 10px;
+  font-size: 12px;
+  text-align: center;
+}
+
 /* =========================================================
    Tables
    ========================================================= */
@@ -635,7 +789,7 @@ svg {
 
 .dashboard-table {
   width: 100%;
-  min-width: 560px;
+  min-width: 540px;
   border-collapse: collapse;
   text-align: left;
 }
@@ -645,7 +799,7 @@ svg {
 }
 
 .dashboard-table th {
-  padding: 7px 10px;
+  padding: 8px 10px;
   color: var(--es-muted);
   border-bottom: 1px solid var(--es-border);
   font-size: 10px;
@@ -656,7 +810,7 @@ svg {
 }
 
 .dashboard-table td {
-  padding: 8px 10px;
+  padding: 9px 10px;
   color: #4f6a63;
   border-bottom: 1px solid #edf1ec;
   font-size: 12px;
@@ -730,7 +884,7 @@ svg {
   justify-content: center;
   width: fit-content;
   max-width: 100%;
-  padding: 3px 8px;
+  padding: 4px 8px;
   color: #53645a;
   background: #eff2ef;
   border: 1px solid #e4e9e4;
@@ -774,7 +928,7 @@ svg {
 }
 
 .dashboard-status-badge.cancelled {
-  color: #b74444;
+  color: var(--es-danger);
   background: #fff0ef;
   border-color: #f0d0cd;
 }
@@ -786,23 +940,53 @@ svg {
 }
 
 /* =========================================================
-   Mini calendar
+   Next event
    ========================================================= */
 
-.dashboard-calendar-header {
+.dashboard-next-event {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  flex-direction: column;
   gap: 8px;
-  margin-bottom: 8px;
+  min-width: 0;
 }
 
-.dashboard-calendar-month {
-  margin: 0;
-  color: var(--es-ink-dark);
-  font-size: 13px;
-  font-weight: 750;
+.dashboard-next-event-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #edf1ec;
 }
+
+.dashboard-next-event-head > strong {
+  min-width: 0;
+  color: var(--es-ink-dark);
+  font-size: 15px;
+  font-weight: 750;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.dashboard-next-event p {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin: 0;
+  color: var(--es-ink);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.dashboard-next-event p svg {
+  margin-top: 2px;
+  color: var(--es-primary);
+}
+
+/* =========================================================
+   Mini calendar
+   ========================================================= */
 
 .dashboard-calendar-controls {
   display: flex;
@@ -814,13 +998,13 @@ svg {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
   padding: 0;
   color: var(--es-primary);
   background: #f8faf7;
   border: 1px solid var(--es-border);
-  border-radius: 7px;
+  border-radius: 8px;
   cursor: pointer;
   transition: background var(--es-transition), border-color var(--es-transition);
 }
@@ -828,6 +1012,13 @@ svg {
 .dashboard-calendar-controls button:hover {
   background: var(--es-primary-soft);
   border-color: #b8d7ca;
+}
+
+.dashboard-calendar-month {
+  margin: 0 0 8px;
+  color: var(--es-ink-dark);
+  font-size: 13px;
+  font-weight: 750;
 }
 
 .dashboard-calendar-grid {
@@ -854,12 +1045,12 @@ svg {
   align-items: center;
   justify-content: center;
   min-width: 0;
-  min-height: 29px;
-  padding: 3px 1px 6px;
+  min-height: 32px;
+  padding: 3px 1px 7px;
   color: #4f6a63;
   background: transparent;
   border: 1px solid transparent;
-  border-radius: 7px;
+  border-radius: 8px;
   font-size: 11px;
   font-weight: 600;
   cursor: pointer;
@@ -895,7 +1086,7 @@ svg {
 
 .dashboard-calendar-dot {
   position: absolute;
-  bottom: 3px;
+  bottom: 4px;
   width: 4px;
   height: 4px;
   background: var(--es-primary);
@@ -910,8 +1101,7 @@ svg {
    Budget tracking
    ========================================================= */
 
-.dashboard-budget-summary,
-.dashboard-expense-summary {
+.dashboard-budget-summary {
   display: flex;
   flex-direction: column;
   align-items: stretch;
@@ -923,7 +1113,7 @@ svg {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 7px 10px;
+  padding: 8px 11px;
   background: #f8faf7;
   border: 1px solid #edf1ec;
   border-radius: 8px;
@@ -949,7 +1139,8 @@ svg {
 .dashboard-budget-progress {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 6px;
+  padding-bottom: 4px;
 }
 
 .dashboard-budget-progress-head {
@@ -967,12 +1158,13 @@ svg {
 
 .dashboard-budget-progress-head strong {
   color: var(--es-ink-dark);
+  font-size: 14px;
   font-weight: 800;
 }
 
 .dashboard-progress-track {
   width: 100%;
-  height: 7px;
+  height: 8px;
   overflow: hidden;
   background: #e9efe8;
   border-radius: 20px;
@@ -997,22 +1189,22 @@ svg {
   margin-top: 0;
 }
 
-.dashboard-budget-summary .dashboard-text-button,
-.dashboard-expense-summary .dashboard-text-button {
-  align-self: flex-start;
-}
+/* ---------- Expense status pair ---------- */
 
-/* =========================================================
-   Expense overview
-   ========================================================= */
+.dashboard-expense-pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
 
 .dashboard-expense-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 9px;
+  min-width: 0;
   padding: 8px 10px;
-  background: #f8faf7;
-  border: 1px solid #edf1ec;
+  background: #fbfcfa;
+  border: 1px solid var(--es-border);
   border-radius: 8px;
 }
 
@@ -1037,8 +1229,7 @@ svg {
   min-width: 0;
 }
 
-.dashboard-expense-label strong,
-.dashboard-expense-value strong {
+.dashboard-expense-label strong {
   display: block;
   color: var(--es-ink-dark);
   font-size: 12px;
@@ -1046,124 +1237,11 @@ svg {
   line-height: 1.3;
 }
 
-.dashboard-expense-label small,
-.dashboard-expense-value small {
+.dashboard-expense-label small {
   display: block;
   color: var(--es-muted);
   font-size: 10px;
   line-height: 1.35;
-}
-
-.dashboard-expense-value {
-  flex-shrink: 0;
-  text-align: right;
-}
-
-.dashboard-expense-total {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 8px 10px;
-  color: var(--es-primary-dark);
-  background: var(--es-primary-soft);
-  border: 1px solid #d5eadf;
-  border-radius: 8px;
-  font-size: 11px;
-  font-weight: 650;
-}
-
-.dashboard-expense-total strong {
-  color: var(--es-ink-dark);
-  font-size: 13px;
-  font-weight: 800;
-  white-space: nowrap;
-}
-
-/* =========================================================
-   Next event
-   ========================================================= */
-
-.dashboard-next-event {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 7px;
-  min-width: 0;
-}
-
-.dashboard-next-event > strong {
-  color: var(--es-ink-dark);
-  font-size: 15px;
-  font-weight: 750;
-  line-height: 1.35;
-  overflow-wrap: anywhere;
-}
-
-.dashboard-next-event p {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  margin: 0;
-  color: var(--es-muted);
-  font-size: 12px;
-  line-height: 1.5;
-  overflow-wrap: anywhere;
-}
-
-.dashboard-next-event p svg {
-  margin-top: 2px;
-  color: var(--es-primary);
-}
-
-/* =========================================================
-   Workspace modules (compact chip grid)
-   ========================================================= */
-
-.dashboard-module-list {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  gap: 7px;
-}
-
-.dashboard-module-list button {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  width: 100%;
-  min-width: 0;
-  padding: 8px 10px;
-  color: var(--es-ink);
-  background: #fbfcfa;
-  border: 1px solid var(--es-border);
-  border-radius: 9px;
-  text-align: left;
-  cursor: pointer;
-  transition:
-    background var(--es-transition),
-    border-color var(--es-transition),
-    transform var(--es-transition);
-}
-
-.dashboard-module-list button:hover {
-  background: var(--es-primary-soft);
-  border-color: #b8d7ca;
-  transform: translateY(-1px);
-}
-
-.dashboard-module-list button > svg:first-child {
-  color: var(--es-primary);
-}
-
-.dashboard-module-list button strong {
-  flex: 1;
-  min-width: 0;
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.dashboard-module-list button > svg:last-child {
-  color: #9db3ab;
 }
 
 /* =========================================================
@@ -1544,30 +1622,254 @@ svg {
 }
 
 /* =========================================================
-   Large tablets / small laptops — up to 1100px
+   Hero row — compact metrics (left) + upcoming events and
+   calendar (right), all above the fold
    ========================================================= */
 
-@media (max-width: 1100px) {
-  .dashboard-stat-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
+.dashboard-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(330px, 1fr);
+  align-items: stretch;
+  gap: 12px;
+  margin-bottom: 14px;
+}
 
-  .dashboard-main-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
+.dashboard-hero > * {
+  min-width: 0;
+}
 
-  .dashboard-triple-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
+.dashboard-hero .dashboard-stat-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-rows: 1fr;
+  gap: 8px;
+  margin-bottom: 0;
+}
 
-  .dashboard-triple-grid > :last-child {
-    grid-column: 1 / -1;
-  }
+.dashboard-hero .dashboard-stat-card {
+  justify-content: center;
+  gap: 0;
+  padding: 8px 12px;
+}
+
+.dashboard-hero .dashboard-stat-icon {
+  width: 24px;
+  height: 24px;
+  flex-basis: 24px;
+  border-radius: 7px;
+}
+
+.dashboard-hero .dashboard-stat-icon svg {
+  width: 13px;
+  height: 13px;
+}
+
+.dashboard-hero .dashboard-stat-value {
+  margin-top: 1px;
+  font-size: clamp(16px, 1.35vw, 19px);
+}
+
+.dashboard-hero-side {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.dashboard-hero-side .dashboard-panel {
+  padding: 12px 14px;
+}
+
+.dashboard-hero-side .dashboard-panel-heading {
+  margin-bottom: 8px;
+}
+
+.dashboard-hero-side .dashboard-upcoming-panel {
+  flex: 1;
+}
+
+.dashboard-hero-side .dashboard-empty-state {
+  min-height: 90px;
+}
+
+/* ---------- Upcoming events list ---------- */
+
+.dashboard-event-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dashboard-event-list li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 7px 9px;
+  background: #fbfcfa;
+  border: 1px solid var(--es-border);
+  border-radius: 9px;
+  transition: background var(--es-transition), border-color var(--es-transition);
+}
+
+.dashboard-event-list li:hover {
+  background: #f6faf7;
+  border-color: #c5ddd0;
+}
+
+.dashboard-event-date {
+  display: flex;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: var(--es-primary-dark);
+  background: var(--es-primary-soft);
+  border: 1px solid #d5eadf;
+  border-radius: 9px;
+  line-height: 1.1;
+}
+
+.dashboard-event-date strong {
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.dashboard-event-date span {
+  font-size: 9px;
+  font-weight: 750;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+}
+
+.dashboard-event-info {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.dashboard-event-info strong,
+.dashboard-event-info span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dashboard-event-info strong {
+  color: var(--es-ink-dark);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.dashboard-event-info span {
+  color: var(--es-muted);
+  font-size: 10px;
+}
+
+.dashboard-event-meta {
+  display: flex;
+  flex-shrink: 0;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.dashboard-event-meta small {
+  color: var(--es-muted);
+  font-size: 10px;
+}
+
+/* ---------- Compact calendar inside the hero ---------- */
+
+.dashboard-hero-side .dashboard-calendar-month {
+  margin-bottom: 4px;
+  font-size: 12px;
+}
+
+.dashboard-hero-side .dashboard-calendar-grid {
+  gap: 2px;
+}
+
+.dashboard-hero-side .dashboard-calendar-day {
+  min-height: 26px;
+  padding: 2px 1px 5px;
+}
+
+.dashboard-hero-side .dashboard-calendar-weekday {
+  padding: 1px 0;
+}
+
+.dashboard-hero-side .dashboard-calendar-controls button {
+  width: 26px;
+  height: 26px;
 }
 
 /* =========================================================
-   Tablet / sidebar becomes a drawer — up to 900px
+   Responsive
+   Order matters: widest breakpoint first, so smaller screens
+   override larger ones.
    ========================================================= */
+
+/* ---------- Large laptops — up to 1280px ---------- */
+
+@media (max-width: 1280px) {
+  .dashboard-stat-grid {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .dashboard-stat-card {
+    padding: 12px;
+  }
+
+  .dashboard-grid-main,
+  .dashboard-grid-budget {
+    grid-template-columns: minmax(0, 1.6fr) minmax(260px, 1fr);
+  }
+}
+
+/* ---------- Tablets / small laptops — up to 1100px ---------- */
+
+@media (max-width: 1100px) {
+  .dashboard-stat-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .dashboard-grid-charts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .dashboard-grid-charts > :last-child {
+    grid-column: 1 / -1;
+  }
+
+  .dashboard-grid-budget,
+  .dashboard-grid-main {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* Hero stacks: metrics on top, schedule below */
+  .dashboard-hero {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .dashboard-hero .dashboard-stat-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .dashboard-hero-side {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+  }
+}
+
+/* ---------- Sidebar becomes a drawer — up to 900px ---------- */
 
 @media (max-width: 900px) {
   .dashboard-app {
@@ -1585,23 +1887,44 @@ svg {
   }
 
   .dashboard-content {
-    padding: 14px 18px 18px;
+    padding: 16px 18px 18px;
   }
 
-  .dashboard-stat-grid {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+  /* Welcome actions wrap when space gets tight */
+  .dashboard-welcome {
+    flex-wrap: wrap;
+  }
+
+  .dashboard-welcome-actions {
+    flex-wrap: wrap;
   }
 }
+
+/* ---------- Large phones — up to 760px ---------- */
 
 @media (max-width: 760px) {
   .dashboard-stat-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .dashboard-grid-charts {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .dashboard-grid-charts > :last-child {
+    grid-column: auto;
+  }
+
+  .dashboard-hero .dashboard-stat-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .dashboard-hero-side {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
-/* =========================================================
-   Mobile — up to 600px
-   ========================================================= */
+/* ---------- Mobile — up to 600px ---------- */
 
 @media (max-width: 600px) {
   .dashboard-topbar {
@@ -1633,9 +1956,13 @@ svg {
   .dashboard-welcome {
     align-items: flex-start;
     flex-direction: column;
-    gap: 10px;
+    gap: 12px;
     margin-bottom: 12px;
-    padding-bottom: 11px;
+    padding-bottom: 13px;
+  }
+
+  .dashboard-welcome h2 {
+    font-size: 22px;
   }
 
   .dashboard-welcome-actions {
@@ -1646,45 +1973,62 @@ svg {
     flex: 1;
   }
 
+  /* Range filter takes a full row above Refresh / Manage events */
+  .dashboard-range-filter {
+    flex: 1 1 100%;
+  }
+
+  .dashboard-range-filter select {
+    width: 100%;
+  }
+
+  /* Quick links scroll sideways instead of wrapping into rows */
+  .dashboard-quick-links {
+    flex-wrap: nowrap;
+    margin-right: -12px;
+    margin-left: -12px;
+    padding: 0 12px 4px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .dashboard-quick-links::-webkit-scrollbar {
+    display: none;
+  }
+
+  .dashboard-quick-links button {
+    flex-shrink: 0;
+  }
+
   .dashboard-stat-grid {
     gap: 8px;
   }
 
   .dashboard-stat-card {
-    gap: 8px;
-    padding: 9px 10px;
+    padding: 10px 11px;
   }
 
   .dashboard-stat-icon {
-    width: 30px;
-    height: 30px;
-    flex-basis: 30px;
-    border-radius: 8px;
-  }
-
-  .dashboard-stat-icon svg {
-    width: 15px;
-    height: 15px;
+    width: 24px;
+    height: 24px;
+    flex-basis: 24px;
   }
 
   .dashboard-stat-value {
-    font-size: 16px;
+    font-size: 17px;
   }
 
-  .dashboard-triple-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .dashboard-triple-grid > :last-child {
-    grid-column: auto;
+  .dashboard-grid,
+  .dashboard-column {
+    gap: 10px;
   }
 
   .dashboard-panel {
     padding: 12px;
   }
 
-  .dashboard-module-list {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .dashboard-expense-pair {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .dashboard-alert {
@@ -1700,9 +2044,7 @@ svg {
   }
 }
 
-/* =========================================================
-   Small phones — up to 380px
-   ========================================================= */
+/* ---------- Small phones — up to 380px ---------- */
 
 @media (max-width: 380px) {
   .dashboard-content {
@@ -1715,11 +2057,8 @@ svg {
     padding-left: 11px;
   }
 
-  .dashboard-stat-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .dashboard-module-list {
+  .dashboard-stat-grid,
+  .dashboard-hero .dashboard-stat-grid {
     grid-template-columns: minmax(0, 1fr);
   }
 
@@ -1728,7 +2067,7 @@ svg {
   }
 
   .dashboard-calendar-day {
-    min-height: 27px;
+    min-height: 28px;
     font-size: 10px;
   }
 }
