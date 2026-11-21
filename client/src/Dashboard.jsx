@@ -68,6 +68,7 @@ import Budget from "./Budget";
 import Sponsorships from "./Sponsorships";
 import Approvals from "./Approvals";
 import Notifications from "./Notifications";
+import Reports from "./Reports";
 
 import "./Dashboard.css";
 
@@ -2642,6 +2643,20 @@ export default function Dashboard({ user: userProp, onLogout }) {
 
     case "Budget":
       pageContent = <Budget user={user} />;
+      break;
+
+    case "Reports":
+      pageContent = (isAdmin(user) || isOrganizer(user)) ? (
+        <Reports user={user} />
+      ) : (
+        <section className="dashboard-panel">
+          <div className="dashboard-empty-state">
+            <AlertCircle size={26} />
+            <h3>Access restricted</h3>
+            <p>Reports are available to organizers and administrators.</p>
+          </div>
+        </section>
+      );
       break;
 
     case "Vendors":

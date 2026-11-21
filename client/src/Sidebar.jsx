@@ -13,6 +13,7 @@ const organizerNavigationItems = [
   { label: "Events", icon: "▦", href: "#events" },
   { label: "Attendance", icon: "✓", href: "#attendance" },
   { label: "Budget", icon: "₹", href: "#budget" },
+  { label: "Reports", icon: "▤", href: "#reports" },
   { label: "Vendors", icon: "♙", href: "#vendors" },
   { label: "Sponsorships", icon: "▣", href: "#sponsorships" },
   { label: "Venues", icon: "⌖", href: "#venues" },
